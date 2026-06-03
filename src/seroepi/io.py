@@ -468,12 +468,12 @@ class PathogenwatchGenomeParser(BaseGenotypeParser):
         genotype_df = genotype_df.loc[:, ~genotype_df.columns.duplicated()]
         
         # Identify mapped/known columns to avoid prefixing them
-        known_cols = set(cls.column_map.keys()).union(
-            cls.geno_cols, cls.pheno_cols, cls.qc_cols, cls.vir_cols, cls.amr_cols
-        )
+        # known_cols = set(cls.column_map.keys()).union(
+        #     cls.geno_cols, cls.pheno_cols, cls.qc_cols, cls.vir_cols, cls.amr_cols
+        # )
         
-        # Assign all unknown columns as metadata so the schema doesn't discard them
-        meta_renames = {col: f"meta_{col}" for col in genotype_df.columns if col not in known_cols}
-        genotype_df = genotype_df.rename(columns=meta_renames)
+        # # Assign all unknown columns as metadata so the schema doesn't discard them
+        # meta_renames = {col: f"meta_{col}" for col in genotype_df.columns if col not in known_cols}
+        # genotype_df = genotype_df.rename(columns=meta_renames)
 
         return super().parse(genotype_df, meta_df=meta_df, meta_kwargs=meta_kwargs, dataset_name=dataset_name)

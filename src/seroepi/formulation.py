@@ -54,42 +54,6 @@ class Formulation:
     # Full history of ranks across all LOO permutations (used for plotting)
     permutation_history: pd.DataFrame
 
-    @classmethod
-    def from_custom(
-            cls,
-            custom_targets: list[str],
-            baseline_result: 'PrevalenceEstimates'
-    ) -> 'Formulation':
-        """
-        Creates a custom Formulation from a user-defined list of targets.
-        Calculates the baseline coverage for these specific targets.
-        """
-        trait_name = baseline_result.trait
-        raw_df = baseline_result.data
-
-        # 1. Calculate the true baseline prevalence for everything
-        baseline = raw_df.groupby('target')['estimate'].sum().sort_values(ascending=False).reset_index()
-
-        # 2. Filter and reorder the baseline to match the user's custom list exactly
-        # We use pd.Categorical to ensure the dataframe retains the exact order the user requested
-        baseline['target_cat'] = pd.Categorical(baseline['target'], categories=custom_targets, ordered=True)
-        custom_rankings = baseline.dropna(subset=['target_cat']).sort_values('target_cat').drop(
-            columns=['target_cat'])
-
-        # The new rank is simply the order they requested them in
-        custom_rankings['baseline_rank'] = range(1, len(custom_targets) + 1)
-
-        # 3. Create empty stability metrics (since this is a manual override, not a LOO calculation)
-        empty_df = pd.DataFrame()
-
-        return cls(
-            trait=trait_name,
-            max_valency=len(custom_targets),
-            rankings=custom_rankings,
-            stability_metrics=empty_df,
-            permutation_history=empty_df
-        )
-
     def save(self, filepath: Union[str, Path]) -> None:
         """Serializes the Formulation instance to disk."""
         path = Path(filepath)
@@ -115,6 +79,22 @@ class Formulation:
             A list of target names.
         """
         return self.rankings.head(self.max_valency)['target'].tolist()
+
+    def assess_coverage(self, df: pd.DataFrame, col_name: str = 'Vaccine_Coverage') -> pd.DataFrame:
+        """
+        Appends a boolean column indicating whether each row's trait variant 
+        is covered by the targets in this formulation.
+        """
+        if self.trait not in df.columns:
+            raise KeyError(f"Active dataset is missing the formulated trait: {self.trait}")
+            
+        targets = self.get_formulation()
+        
+        # Assign binary coverage trait
+        coverage_series = pd.Series(False, index=df.index)
+        valid_mask = df[self.trait].notna()
+        coverage_series.loc[valid_mask] = df.loc[valid_mask, self.trait].isin(targets)
+        return df.assign(**{col_name: coverage_series})
 
     def evaluate_longevity(self, forecast: 'IncidenceEstimates') -> pd.DataFrame:
         """
@@ -184,12 +164,9 @@ class BaseFormulationDesigner(ModelledMixin, ABC):
         Returns only the rows that are covered by the designed _formulation.
         """
         self.check_is_fitted()
-        trait_name = self.formulation_.trait
-        if trait_name not in df.columns:
-            raise KeyError(f"The trait column '{trait_name}' was not found in the provided DataFrame.")
-            
-        covered_targets = self.formulation_.get_formulation()
-        return df[df[trait_name].isin(covered_targets)].copy()
+        
+        df_covered = self.formulation_.assess_coverage(df, col_name='_tmp_coverage')
+        return df_covered[df_covered['_tmp_coverage']].drop(columns=['_tmp_coverage']).copy()
 
 
 class PostHocFormulationDesigner(BaseFormulationDesigner):
@@ -202,7 +179,7 @@ class PostHocFormulationDesigner(BaseFormulationDesigner):
     of stability (ignoring non-linear shrinkage and spatial correlation).
     """
 
-    def fit(self, result: 'PrevalenceEstimates', loo_col: str,
+    def fit(self, result: 'PrevalenceEstimates', loo_col: Optional[str] = None,
             progress_callback: Optional[Callable[[int, int], None]] = None) -> 'PostHocFormulationDesigner':
         """
         Evaluates prevalence results to design a _formulation.
@@ -220,37 +197,83 @@ class PostHocFormulationDesigner(BaseFormulationDesigner):
         # 1. Baseline
         baseline = _extract_ranks(raw_df, 'baseline_rank')
 
-        # 2. Permutations (Vectorized O(N) Subtraction)
-        # Pre-calculate global sums and the individual group sums
-        total_estimates = raw_df.groupby('target')['estimate'].sum()
-        group_target_estimates = raw_df.groupby([loo_col, 'target'])['estimate'].sum().unstack(fill_value=0)
-
-        unique_groups = raw_df[loo_col].unique()
-        total_groups = len(unique_groups)
-        loo_records = []
-        for i, group in enumerate(unique_groups, 1):
-            # Subtract the holdout group's contribution from the global total
-            if group in group_target_estimates.index:
-                loo_estimates = total_estimates - group_target_estimates.loc[group]
-            else:
-                loo_estimates = total_estimates.copy()
-
-            loo_ranks = loo_estimates.sort_values(ascending=False).reset_index()
-            loo_ranks.columns = ['target', 'estimate']
-            loo_ranks['loo_rank'] = loo_ranks.index + 1
-            loo_ranks['holdout_group'] = group
-            loo_records.append(loo_ranks)
-            
-            if progress_callback:
-                progress_callback(i, total_groups)
-
-        history = pd.concat(loo_records, ignore_index=True)
+        if loo_col and loo_col in raw_df.columns:
+            # 2. Permutations (Vectorized O(N) Subtraction)
+            # Pre-calculate global sums and the individual group sums
+            total_estimates = raw_df.groupby('target')['estimate'].sum()
+            group_target_estimates = raw_df.groupby([loo_col, 'target'])['estimate'].sum().unstack(fill_value=0)
+    
+            unique_groups = raw_df[loo_col].unique()
+            total_groups = len(unique_groups)
+            loo_records = []
+            for i, group in enumerate(unique_groups, 1):
+                # Subtract the holdout group's contribution from the global total
+                if group in group_target_estimates.index:
+                    loo_estimates = total_estimates - group_target_estimates.loc[group]
+                else:
+                    loo_estimates = total_estimates.copy()
+    
+                loo_ranks = loo_estimates.sort_values(ascending=False).reset_index()
+                loo_ranks.columns = ['target', 'estimate']
+                loo_ranks['loo_rank'] = loo_ranks.index + 1
+                loo_ranks['holdout_group'] = group
+                loo_records.append(loo_ranks)
+                
+                if progress_callback:
+                    progress_callback(i, total_groups)
+    
+            history = pd.concat(loo_records, ignore_index=True)
+        else:
+            history = pd.DataFrame(columns=['target', 'estimate', 'loo_rank', 'holdout_group'])
+            if progress_callback: progress_callback(1, 1)
 
         # 3. Compile
         self.formulation_ = _compile_stability_metrics(baseline, history, trait_name, self.valency)
         self.is_fitted_ = True
         return self
 
+
+class CustomFormulationDesigner(BaseFormulationDesigner):
+    """
+    Formulation designer that generates a custom formulation from a user-defined list of targets.
+    Calculates the baseline coverage for these specific targets without running cross-validation.
+    """
+    def __init__(self, targets: list[str]):
+        """
+        Initializes the custom designer.
+
+        Args:
+            targets: The list of custom targets to evaluate.
+        """
+        self.targets = targets
+        super().__init__(valency=len(targets), n_jobs=1)
+
+    def fit(self, baseline_result: 'PrevalenceEstimates', progress_callback: Optional[Callable[[int, int], None]] = None) -> 'CustomFormulationDesigner':
+        """Evaluates prevalence results against the custom target list."""
+        trait_name = baseline_result.trait
+        raw_df = baseline_result.data
+
+        # 1. Calculate the true baseline prevalence for everything
+        baseline = raw_df.groupby('target')['estimate'].sum().sort_values(ascending=False).reset_index()
+
+        # 2. Filter and reorder the baseline to match the user's custom list exactly
+        baseline['target_cat'] = pd.Categorical(baseline['target'], categories=self.targets, ordered=True)
+        custom_rankings = baseline.dropna(subset=['target_cat']).sort_values('target_cat').drop(columns=['target_cat'])
+        custom_rankings['baseline_rank'] = range(1, len(self.targets) + 1)
+
+        # 3. Create empty stability metrics (since this is a manual override, not a LOO calculation)
+        empty_stability = pd.DataFrame(columns=['target', 'mean_loo_rank', 'rank_variance', 'probability_in_top_n']).set_index('target')
+        empty_history = pd.DataFrame(columns=['target', 'estimate', 'loo_rank', 'holdout_group'])
+
+        self.formulation_ = Formulation(
+            trait=trait_name,
+            max_valency=len(self.targets),
+            rankings=custom_rankings,
+            stability_metrics=empty_stability,
+            permutation_history=empty_history
+        )
+        self.is_fitted_ = True
+        return self
 
 class CVFormulationDesigner(BaseFormulationDesigner):
     """
@@ -259,7 +282,7 @@ class CVFormulationDesigner(BaseFormulationDesigner):
     This method retrains the model for each LOO permutation, which is more
     computationally expensive but necessary for complex models.
     """
-    def fit(self, estimator: BaseEstimator, agg_df: pd.DataFrame, loo_col: str,
+    def fit(self, estimator: BaseEstimator, agg_df: pd.DataFrame, loo_col: Optional[str] = None,
             progress_callback: Optional[Callable[[int, int], None]] = None) -> 'CVFormulationDesigner':
         """
         Evaluates an estimator using LOO cross-validation to design a _formulation.
@@ -277,27 +300,31 @@ class CVFormulationDesigner(BaseFormulationDesigner):
         trait_name = baseline_result.trait
         baseline = _extract_ranks(baseline_result.data, 'baseline_rank')
 
-        # 2. Permutations (Parallel Processing)
-        groups = agg_df[loo_col].unique()
-        total_groups = len(groups)
-        
-        jobs = (delayed(_run_cv_fold)(estimator, agg_df, loo_col, group) for group in groups)
-
-        loo_records = []
-        try:
-            with Parallel(n_jobs=self.n_jobs, return_as="generator") as parallel:
-                for i, result in enumerate(parallel(jobs), 1):
-                    loo_records.append(result)
+        if loo_col and loo_col in agg_df.columns:
+            # 2. Permutations (Parallel Processing)
+            groups = agg_df[loo_col].unique()
+            total_groups = len(groups)
+            
+            jobs = (delayed(_run_cv_fold)(estimator, agg_df, loo_col, group) for group in groups)
+    
+            loo_records = []
+            try:
+                with Parallel(n_jobs=self.n_jobs, return_as="generator") as parallel:
+                    for i, result in enumerate(parallel(jobs), 1):
+                        loo_records.append(result)
+                        if progress_callback:
+                            progress_callback(i, total_groups)
+            except TypeError:
+                # Fallback for joblib < 1.3 where return_as="generator" isn't supported
+                with Parallel(n_jobs=self.n_jobs) as parallel:
+                    loo_records = parallel(jobs)
                     if progress_callback:
-                        progress_callback(i, total_groups)
-        except TypeError:
-            # Fallback for joblib < 1.3 where return_as="generator" isn't supported
-            with Parallel(n_jobs=self.n_jobs) as parallel:
-                loo_records = parallel(jobs)
-                if progress_callback:
-                    progress_callback(total_groups, total_groups)
-
-        history = pd.concat(loo_records, ignore_index=True)
+                        progress_callback(total_groups, total_groups)
+    
+            history = pd.concat(loo_records, ignore_index=True)
+        else:
+            history = pd.DataFrame(columns=['target', 'estimate', 'loo_rank', 'holdout_group'])
+            if progress_callback: progress_callback(1, 1)
 
         # 3. Compile
         self.formulation_ = _compile_stability_metrics(baseline, history, trait_name, self.valency)
@@ -330,22 +357,26 @@ def _compile_stability_metrics(
         valency: int
 ) -> 'Formulation':
     """Compiles the final variance and probability matrix for the _formulation."""
-    stability = []
-    for t in baseline['target']:
-        v_hist = history[history['target'] == t]
-        var = v_hist['loo_rank'].var()
-        stability.append({
-            'target': t,
-            'mean_loo_rank': v_hist['loo_rank'].mean(),
-            'rank_variance': float(var) if pd.notna(var) else 0.0,
-            'probability_in_top_n': (v_hist['loo_rank'] <= valency).mean()
-        })
+    if history.empty:
+        stability = pd.DataFrame(columns=['target', 'mean_loo_rank', 'rank_variance', 'probability_in_top_n']).set_index('target')
+    else:
+        stability_list = []
+        for t in baseline['target']:
+            v_hist = history[history['target'] == t]
+            var = v_hist['loo_rank'].var()
+            stability_list.append({
+                'target': t,
+                'mean_loo_rank': v_hist['loo_rank'].mean(),
+                'rank_variance': float(var) if pd.notna(var) else 0.0,
+                'probability_in_top_n': (v_hist['loo_rank'] <= valency).mean()
+            })
+        stability = pd.DataFrame(stability_list).set_index('target')
 
     return Formulation(
         trait=trait_name,
         max_valency=valency,
         rankings=baseline,
-        stability_metrics=pd.DataFrame(stability).set_index('target'),
+        stability_metrics=stability,
         permutation_history=history
     )
 

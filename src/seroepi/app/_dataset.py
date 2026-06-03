@@ -38,7 +38,7 @@ def dataset_ui():
                                            "Upload a CSV file containing patient or environmental metadata (e.g., date, spatial) to merge with the genotype data."),
                                 ui.output_ui("dynamic_meta_mapping"),
                                 ui.hr(),
-                                ui.input_action_button("btn_process", "Load Files", class_="btn-primary w-100"),
+                                ui.input_action_button("btn_process", "Load Data 💽", class_="btn-primary w-100"),
                                 class_="mt-3"
                             )
                         ),
@@ -49,7 +49,7 @@ def dataset_ui():
                                 ui.input_action_button("btn_fetch_pw", "Fetch Collections", class_="btn-outline-primary w-100 mb-3"),
                                 ui.input_selectize("pw_collection", "Select Collection", choices=[]),
                                 ui.hr(),
-                                ui.input_action_button("btn_load_pw", "Load Collection", class_="btn-primary w-100"),
+                                ui.input_action_button("btn_load_pw", "Load Data 💽", class_="btn-primary w-100"),
                                 class_="mt-3"
                             )
                         ),
@@ -59,7 +59,7 @@ def dataset_ui():
                                 ui.p("Load the KlebNET Neonatal Sepsis example dataset. This includes 981 "
                                      "genomes, along with spatio-temporta; metadata and a pairwise SNP distance matrix.",
                                      class_="text-muted small mb-3"),
-                                ui.input_action_button("btn_load_example", "Load Example Data", class_="btn-primary w-100"),
+                                ui.input_action_button("btn_load_example", "Load Data 💽", class_="btn-primary w-100"),
                                 class_="mt-3"
                             )
                         ),
@@ -73,24 +73,32 @@ def dataset_ui():
                             #                            class_="btn-outline-primary w-100 mb-3"),
                             #     ui.input_selectize("pw_collection", "Select Collection", choices=[]),
                             #     ui.hr(),
-                            #     ui.input_action_button("btn_load_pw", "Load Result", class_="btn-primary w-100"),
+                            #     ui.input_action_button("btn_load_pw", "Load Data 💽", class_="btn-primary w-100"),
                             #     class_="mt-3"
                             # )
                         ),
                     ),
                     ui.hr(),
-                    ui.input_action_button("btn_clear_data", "Clear All Data", class_="btn-outline-danger w-100")
+                    ui.input_action_button("btn_clear_data", "Clear Data 🗑️", class_="btn-outline-danger w-100")
                 ),
                 ui.accordion_panel(
-                    "Cluster Generation 🕸️",
+                    "Quality Control 🧫",
+                    ui.output_ui("qc_filters_ui"),
+                    ui.input_action_button("btn_apply_qc", "Apply Filters 🧹", class_="btn-primary w-100 mt-2"),
+                    ui.input_action_button("btn_reset_qc", "Remove Filters 🔄", class_="btn-outline-secondary w-100 mt-2")
+                ),
+                ui.accordion_panel(
+                    "Cluster Generation 🍇",
                     ui.navset_pill(
                         ui.nav_panel(
                             "Genomic 🧬",
                             ui.div(
                                 ui.p("Identify genomic clusters using a SNP distance matrix.", class_="text-muted small mb-3"),
                                 ui.tooltip(ui.input_numeric("snp_threshold", "SNP Threshold", value=20),
-                                           "Maximum single nucleotide polymorphisms (SNPs) between isolates to consider them part of the same genomic cluster."),
-                                ui.input_action_button("btn_calc_snp_clusters", "Calculate Clusters", class_="btn-primary w-100 mt-2"),
+                                           "Maximum single nucleotide polymorphisms (SNPs) between isolates to "
+                                           "consider them part of the same genomic cluster."),
+                                ui.input_action_button("btn_calc_snp_clusters", "Calculate Clusters 🍇",
+                                                       class_="btn-primary w-100 mt-2"),
                                 class_="mt-3"
                             )
                         ),
@@ -98,13 +106,13 @@ def dataset_ui():
                             "Transmission 🏥",
                             ui.div(
                                 ui.p("Identify outbreaks based on spatial and temporal proximity.", class_="text-muted small mb-3"),
-                                ui.tooltip(ui.input_selectize("trans_clone_col", "Clone Column", choices=[], selected=""),
+                                ui.tooltip(ui.input_selectize("trans_clone_col", "Clone Column 🦠", choices=[], selected=""),
                                            "The column defining a bacterial clone or lineage (e.g., ST) to restrict transmission bounds."),
-                                ui.tooltip(ui.input_numeric("trans_spatial_thr", "Spatial Dist (km)", value=10.0),
+                                ui.tooltip(ui.input_numeric("trans_spatial_thr", "Spatial Dist (km) 📏", value=10.0),
                                            "Maximum geographical distance (in kilometers) between cases to link them in a transmission cluster."),
-                                ui.tooltip(ui.input_numeric("trans_temporal_thr", "Temporal Dist (days)", value=20),
+                                ui.tooltip(ui.input_numeric("trans_temporal_thr", "Temporal Dist (days) 🗓️", value=20),
                                            "Maximum time gap (in days) between cases to link them in a transmission cluster."),
-                                ui.input_action_button("btn_calc_trans_clusters", "Calculate Clusters", class_="btn-primary w-100 mt-2"),
+                                ui.input_action_button("btn_calc_trans_clusters", "Calculate Clusters 🍇", class_="btn-primary w-100 mt-2"),
                                 class_="mt-3"
                             )
                         )
@@ -168,13 +176,13 @@ def dataset_server(input, output, session, app_state: dict):
                     ui.p("Please match your columns to the required fields:", class_="text-muted small"),
                     ui.input_selectize("map_id", "Sample ID", choices=[""] + cols, selected=mapper.guess("map_id")),
                     ui.layout_column_wrap(
-                        ui.input_selectize("map_date", "Temporal", choices=[""] + cols, selected=mapper.guess("map_date")),
-                        ui.input_select("map_date_res", "Resolution", choices=TemporalResolution.ui_labels(), selected=TemporalResolution.UNKNOWN.value),
+                        ui.input_selectize("map_date", "Temporal 🗓️", choices=[""] + cols, selected=mapper.guess("map_date")),
+                        ui.input_select("map_date_res", "Resolution", choices=TemporalResolution.ui_labels(), selected=TemporalResolution.MONTH.value),
                         width=1 / 2
                     ),
                     ui.layout_column_wrap(
-                        ui.input_selectize("map_spatial", "Spatial", choices=[""] + cols, selected=mapper.guess("map_spatial")),
-                        ui.input_select("map_spatial_res", "Resolution", choices=SpatialResolution.ui_labels(), selected=SpatialResolution.UNKNOWN.value),
+                        ui.input_selectize("map_spatial", "Spatial 📏", choices=[""] + cols, selected=mapper.guess("map_spatial")),
+                        ui.input_select("map_spatial_res", "Resolution", choices=SpatialResolution.ui_labels(), selected=SpatialResolution.COUNTRY.value),
                         width=1 / 2
                     ),
                     ui.input_selectize("map_lat", "Latitude", choices=[""] + cols, selected=mapper.guess("map_lat")),
@@ -254,7 +262,9 @@ def dataset_server(input, output, session, app_state: dict):
             metadata_kwargs = {
                 "id_col": "NAME",
                 "date_col": "COLLECTION DATE",
+                "date_res": TemporalResolution.MONTH.value,
                 "spatial_col": "COUNTRY",
+                "spatial_res": SpatialResolution.COUNTRY.value,
                 "lat_col": "LATITUDE",
                 "lon_col": "LONGITUDE"
             }
@@ -352,6 +362,84 @@ def dataset_server(input, output, session, app_state: dict):
         ui.notification_show("All data and results cleared.", type="message")
         ui.update_accordion("dataset_accordion", show="Load Data 💽")
 
+    @render.ui
+    def qc_filters_ui():
+        df = shared_df.get()
+        if df is None:
+            return ui.p("Load data to view QC options.", class_="text-muted small")
+
+        qc_cols = df.qc.metrics.columns.tolist()
+        if not qc_cols:
+            return ui.p("No QC metrics found in the dataset.", class_="text-muted small")
+
+        elements = [ui.p("Filter genomes based on quality thresholds.", class_="text-muted small mb-2")]
+
+        if 'N50' in qc_cols:
+            elements.append(ui.tooltip(
+                ui.input_numeric("qc_min_n50", "Minimum N50", value=10000),
+                "Minimum required N50 assembly quality."
+            ))
+        if 'contig_count' in qc_cols:
+            elements.append(ui.tooltip(
+                ui.input_numeric("qc_max_contigs", "Maximum Contigs", value=500),
+                "Maximum allowed contigs in the assembly."
+            ))
+        if 'species' in qc_cols:
+            elements.append(ui.tooltip(
+                ui.input_text("qc_species", "Require Species", placeholder="e.g. Klebsiella pneumoniae"),
+                "Keep only assemblies matching this species name."
+            ))
+
+        if len(elements) == 1:
+            return ui.p("Supported QC metrics (N50, contig_count, species) not found.", class_="text-muted small")
+
+        return ui.div(*elements)
+
+    @reactive.Effect
+    @reactive.event(input.btn_apply_qc)
+    async def apply_qc_filters():
+        ds_name = app_state["active_dataset_name"].get()
+        reg = dataset_registry.get()
+        if not ds_name or ds_name not in reg: return
+
+        base_df = reg[ds_name].get("unfiltered_df", reg[ds_name]["df"])
+
+        min_n50 = input.qc_min_n50() if "qc_min_n50" in input else 10000
+        max_contigs = input.qc_max_contigs() if "qc_max_contigs" in input else 500
+        species = input.qc_species() if "qc_species" in input and input.qc_species().strip() else None
+
+        async with ui_task("Filtering Error") as p:
+            p.set(message="Applying QC filters...", value=50)
+            await sleep(0)
+
+            def run_filter():
+                return base_df.qc.filter_assemblies(
+                    min_n50=min_n50, max_contigs=max_contigs, require_species=species
+                )
+
+            filtered_df = await to_thread(run_filter)
+
+            shared_df.set(filtered_df)
+            updated_data = {**reg[ds_name], "df": filtered_df}
+            update_registry(dataset_registry, ds_name, updated_data)
+
+            p.set(message="Done!", value=100)
+            ui.notification_show(f"Filtered to {len(filtered_df)} genomes.", type="message")
+
+    @reactive.Effect
+    @reactive.event(input.btn_reset_qc)
+    def reset_qc_filters():
+        ds_name = app_state["active_dataset_name"].get()
+        reg = dataset_registry.get()
+        if not ds_name or ds_name not in reg: return
+
+        base_df = reg[ds_name].get("unfiltered_df")
+        if base_df is not None:
+            shared_df.set(base_df)
+            updated_data = {**reg[ds_name], "df": base_df}
+            update_registry(dataset_registry, ds_name, updated_data)
+            ui.notification_show("Filters removed. Original dataset restored.", type="message")
+
     @reactive.Effect
     @reactive.event(input.btn_calc_snp_clusters)
     async def calc_snp_clusters():
@@ -370,7 +458,12 @@ def dataset_server(input, output, session, app_state: dict):
                 
                 ds_name = app_state["active_dataset_name"].get()
                 if ds_name in dataset_registry.get():
-                    updated_data = {**dataset_registry.get()[ds_name], "df": df}
+                    reg_data = dataset_registry.get()[ds_name]
+                    unfilt_df = reg_data.get("unfiltered_df")
+                    if unfilt_df is not None:
+                        if clusters.name in unfilt_df.columns: unfilt_df = unfilt_df.drop(columns=[clusters.name])
+                        unfilt_df = unfilt_df.join(clusters, on='sample_id')
+                    updated_data = {**reg_data, "df": df, "unfiltered_df": unfilt_df}
                     update_registry(dataset_registry, ds_name, updated_data)
                 p.set(message="Done!", value=100)
                 ui.notification_show(f"Successfully generated {clusters.name}", type="message")

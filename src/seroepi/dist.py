@@ -75,9 +75,8 @@ class DistancesBase(ABC):
         sig = inspect.signature(MDS.__init__)
         if 'normalized_stress' in sig.parameters: mds_kwargs['normalized_stress'] = 'auto'
         if 'init' in sig.parameters: mds_kwargs['init'] = 'random'
-            
-        mds = MDS(**mds_kwargs)
-        return mds.fit_transform(dense_dist)
+
+        return MDS(**mds_kwargs).fit_transform(dense_dist)
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,9 +93,7 @@ class GenomicDistances(DistancesBase):
         elif flavour_val == DistanceFlavour.SKA2.value:
             return cls.from_ska2(filepath_or_buffer)
         elif flavour_val == DistanceFlavour.NEWICK.value:
-            with open(filepath_or_buffer, 'r') as f:
-                newick_string = f.read()
-            return cls.from_newick(newick_string)
+            return cls.from_newick(Path(filepath_or_buffer).read_text())
         else:
             raise ValueError(f"Unknown distance flavour: {flavour_val}")
 
@@ -255,31 +252,26 @@ class GenomicDistances(DistancesBase):
             if self.max_value is None:
                 raise ValueError(f"Cannot convert between Absolute and Relative without a max_value.")
 
-        # Standardize to Relative Distance first (as a base state)
+        # Operate strictly on the internal 1D .data array to preserve sparsity
+        # and prevent massive dense matrix bleed
+        new_mat = self.matrix.copy()
+
+        # 1. Standardize to Relative Distance first (as a base state)
         if self.metric_type == DistanceMetricType.ABSOLUTE_DISTANCE:
-            base_mat = self.matrix / self.max_value
+            new_mat.data = new_mat.data / self.max_value
         elif self.metric_type == DistanceMetricType.ABSOLUTE_SIMILARITY:
-            base_mat = 1.0 - (self.matrix / self.max_value)
+            new_mat.data = 1.0 - (new_mat.data / self.max_value)
         elif self.metric_type == DistanceMetricType.RELATIVE_SIMILARITY:
-            base_mat = 1.0 - self.matrix
-        else:
-            base_mat = self.matrix
+            new_mat.data = 1.0 - new_mat.data
 
         # 2. Convert from base state (Relative Distance) to Target
-        if target_type == DistanceMetricType.RELATIVE_DISTANCE:
-            new_mat = base_mat
-        elif target_type == DistanceMetricType.RELATIVE_SIMILARITY:
-            new_mat = 1.0 - base_mat
+        if target_type == DistanceMetricType.RELATIVE_SIMILARITY:
+            new_mat.data = 1.0 - new_mat.data
         elif target_type == DistanceMetricType.ABSOLUTE_DISTANCE:
-            new_mat = base_mat * self.max_value
+            new_mat.data = new_mat.data * self.max_value
         elif target_type == DistanceMetricType.ABSOLUTE_SIMILARITY:
-            new_mat = (1.0 - base_mat) * self.max_value
-
-        # Explicitly cast back to CSR to prevent dense matrix bleed from scalar subtraction
-        if not isinstance(new_mat, csr_array):
-            new_mat = csr_array(new_mat)
+            new_mat.data = (1.0 - new_mat.data) * self.max_value
             
-        # Return a new frozen instance
         return replace(self, matrix=new_mat, metric_type=target_type)
 
 
@@ -300,19 +292,19 @@ class TransmissionDistances(DistancesBase):
         global_rows = []
         global_cols = []
 
-        # Using pandas factorize is extremely fast for finding unique groups (O(N))
-        unique_clones, clone_codes = pd.factorize(clones)
+        # Filter out rows missing required spatial or temporal data
+        valid_mask = ~(np.isnan(coords[:, 0]) | np.isnan(coords[:, 1]) | np.isnan(dates))
+        
+        # Fast Pandas grouping avoids O(N^2) boolean array masking in loops
+        valid_df = pd.DataFrame({'clone': clones, 'idx': np.arange(n)})[valid_mask]
+        
+        radius_radians = spatial_threshold_km / 6371.0
 
-        for clone_code in range(len(unique_clones)):
-            if pd.isna(unique_clones[clone_code]):
+        for clone_val, group in valid_df.groupby('clone', observed=True):
+            if pd.isna(clone_val):
                 continue
 
-            idx = np.where(clone_codes == clone_code)[0]
-
-            # Filter to items with valid spatiotemporal data
-            valid_mask = ~(np.isnan(coords[idx, 0]) | np.isnan(coords[idx, 1]) | np.isnan(dates[idx]))
-            valid_idx = idx[valid_mask]
-
+            valid_idx = group['idx'].values
             if len(valid_idx) < 2:
                 continue
 
@@ -320,7 +312,6 @@ class TransmissionDistances(DistancesBase):
             group_dates = dates[valid_idx]
 
             tree = BallTree(group_coords, metric='haversine')
-            radius_radians = spatial_threshold_km / 6371.0
             spatial_neighbors = tree.query_radius(group_coords, r=radius_radians)
 
             for i, neighbors in enumerate(spatial_neighbors):

@@ -287,7 +287,7 @@ class BayesianPrevalenceEstimator(ModelledMixin, BayesianMixin, BaseEstimator[Pr
         """
         self._check_zero_padding(agg_df)
 
-        self.strata_, self.meta_ = self._extract_strata(agg_df, exclude_cols=[self.target_event, self.target_n, 'trait'])
+        self.strata_, self.meta_ = self._extract_strata(agg_df, exclude_cols=[self.target_event, self.target_n, 'target'])
 
         df_fit = agg_df.copy()
         
@@ -297,7 +297,7 @@ class BayesianPrevalenceEstimator(ModelledMixin, BayesianMixin, BaseEstimator[Pr
         else:
             group_col = self.strata_[0]
             
-        target_col = 'trait'
+        target_col = 'target'
 
         # Fit and store the encoders exactly once!
         for col in [group_col, target_col]:
@@ -342,7 +342,7 @@ class BayesianPrevalenceEstimator(ModelledMixin, BayesianMixin, BaseEstimator[Pr
         else:
             group_col = self.strata_[0]
 
-        target_col = 'trait'
+        target_col = 'target'
 
         target_idx = jnp.array(self.encoders_[target_col].transform(predict_df[target_col].astype(str)))
         group_idx = jnp.array(self.encoders_[group_col].transform(predict_df[group_col].astype(str)))
@@ -357,14 +357,12 @@ class BayesianPrevalenceEstimator(ModelledMixin, BayesianMixin, BaseEstimator[Pr
             group_idx
         )
 
-        new_cols = {
-            'estimate': np.array(estimate),
-            'lower': np.array(lower),
-            'upper': np.array(upper)
-        }
-
-        # 2. Fast horizontal concatenation (ignores the deep copy overhead)
-        result_df = pd.concat([agg_df, pd.DataFrame(new_cols, index=agg_df.index)], axis=1)
+        # Fast assignment (ignores the deep copy overhead)
+        result_df = agg_df.assign(
+            estimate=np.array(estimate),
+            lower=np.array(lower),
+            upper=np.array(upper)
+        )
 
         return PrevalenceEstimates(
             data=result_df,
@@ -397,9 +395,9 @@ class GLMPrevalenceEstimator(ModelledMixin, BaseEstimator[PrevalenceEstimates]):
 
     def fit(self, agg_df: pd.DataFrame) -> 'GLMPrevalenceEstimator':
         """Fits the binomial GLM."""
-        self.strata_, self.meta_ = self._extract_strata(agg_df, exclude_cols=[self.target_event, self.target_n, 'trait'])
+        self.strata_, self.meta_ = self._extract_strata(agg_df, exclude_cols=[self.target_event, self.target_n, 'target'])
         
-        feature_cols = self.strata_ + ['trait'] if 'trait' in agg_df.columns else self.strata_
+        feature_cols = self.strata_ + ['target'] if 'target' in agg_df.columns else self.strata_
 
         # 1. Fit the encoder (We still use sklearn here because statsmodels' categorical handling can be clunky)
         self.encoder_ = OneHotEncoder(drop='first', sparse_output=False, handle_unknown='ignore')
@@ -415,8 +413,11 @@ class GLMPrevalenceEstimator(ModelledMixin, BaseEstimator[PrevalenceEstimates]):
 
         # 3. Fit the Binomial GLM safely
         # It handles the Fisher Information / Hessian inversion automatically
-        glm_model = sm.GLM(Y, X, family=sm.families.Binomial())
-        self.fit_results_ = glm_model.fit()
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            glm_model = sm.GLM(Y, X, family=sm.families.Binomial())
+            self.fit_results_ = glm_model.fit()
 
         self.is_fitted_ = True
         return self
@@ -426,20 +427,18 @@ class GLMPrevalenceEstimator(ModelledMixin, BaseEstimator[PrevalenceEstimates]):
         self.check_is_fitted()
 
         # Transform new data
-        feature_cols = self.strata_ + ['trait'] if 'trait' in agg_df.columns else self.strata_
+        feature_cols = self.strata_ + ['target'] if 'target' in agg_df.columns else self.strata_
         X_encoded = self.encoder_.transform(agg_df[feature_cols])
         X = sm.add_constant(X_encoded, has_constant='add')
 
         # statsmodels natively handles the delta method and inverse-link transformations
         predictions = self.fit_results_.get_prediction(X).summary_frame(alpha=0.05)
 
-        new_cols = {
-            'estimate': predictions['mean'].values,
-            'lower': predictions['mean_ci_lower'].values,
-            'upper': predictions['mean_ci_upper'].values
-        }
-
-        result_df = pd.concat([agg_df.copy(), pd.DataFrame(new_cols, index=agg_df.index)], axis=1)
+        result_df = agg_df.assign(
+            estimate=predictions['mean'].values,
+            lower=predictions['mean_ci_lower'].values,
+            upper=predictions['mean_ci_upper'].values
+        )
 
         return PrevalenceEstimates(
             data=result_df,
@@ -579,10 +578,11 @@ class SpatialPrevalenceEstimator(ModelledMixin, BayesianMixin, BaseEstimator[Pre
             X_test
         )
 
-        result_df = df.copy()
-        result_df['estimate'] = np.array(estimate)
-        result_df['lower'] = np.array(lower)
-        result_df['upper'] = np.array(upper)
+        result_df = df.assign(
+            estimate=np.array(estimate),
+            lower=np.array(lower),
+            upper=np.array(upper)
+        )
 
         return PrevalenceEstimates(
             data=result_df,
@@ -636,7 +636,7 @@ class GLMIncidenceEstimator(ModelledMixin, BaseEstimator[IncidenceEstimates]):
 
         # Sort entirely upstream to avoid O(N log N) operations inside the loop
         inc_df_sorted = inc_df.sort_values('date')
-        group_cols = self.strata_ + ['trait'] if 'trait' in inc_df_sorted.columns else self.strata_
+        group_cols = self.strata_ + ['target'] if 'target' in inc_df_sorted.columns else self.strata_
         groups = inc_df_sorted.groupby(group_cols, observed=True) if group_cols else [('Global', inc_df_sorted)]
 
         for name, group in groups:
@@ -650,27 +650,28 @@ class GLMIncidenceEstimator(ModelledMixin, BaseEstimator[IncidenceEstimates]):
                 self.fit_results_[name] = None  # Not enough data to model
                 continue
 
+            Y = df_model['variant_count']
+            
+            # Skip if there are zero events (cannot fit a count model)
+            if Y.sum() == 0:
+                self.fit_results_[name] = None
+                continue
+
             # Create a numeric Time Step for the slope
             min_date = df_model['date'].min()
+            df_model['time_step'] = _calculate_time_steps(df_model['date'], min_date, self.freq_)
 
-            if self.freq_ == TemporalResolution.MONTH.value or self.freq_.startswith('M'):
-                df_model['time_step'] = (df_model['date'].dt.year - min_date.year) * 12 + (df_model['date'].dt.month - min_date.month)
-            elif self.freq_ == TemporalResolution.WEEK.value or self.freq_.startswith('W'):
-                df_model['time_step'] = (df_model['date'] - min_date).dt.days // 7
-            elif self.freq_ == TemporalResolution.YEAR.value or self.freq_.startswith('Y'):
-                df_model['time_step'] = df_model['date'].dt.year - min_date.year
-            else:
-                df_model['time_step'] = (df_model['date'] - min_date).dt.days
-
-            Y = df_model['variant_count']
             X = sm.add_constant(df_model['time_step'])
 
             offset = np.log(df_model['total_sequenced']) if self.use_relative_incidence else None
 
             try:
-                # alpha=1.0 is a robust starting guess for overdispersion
-                model = sm.GLM(Y, X, family=sm.families.NegativeBinomial(alpha=1.0), offset=offset)
-                self.fit_results_[name] = model.fit()
+                import warnings
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    # alpha=1.0 is a robust starting guess for overdispersion
+                    model = sm.GLM(Y, X, family=sm.families.NegativeBinomial(alpha=1.0), offset=offset)
+                    self.fit_results_[name] = model.fit()
             except Exception as e:
                 warn(f"GLM failed to converge for stratum {name}: {e}")
                 self.fit_results_[name] = None
@@ -683,13 +684,9 @@ class GLMIncidenceEstimator(ModelledMixin, BaseEstimator[IncidenceEstimates]):
         self.check_is_fitted()
 
         freq_str = self.freq_
-        try:
-            freq = TemporalResolution(freq_str).pandas_offset
-            if not freq: freq = 'MS'
-        except ValueError:
-            freq = 'MS'
+        freq = _parse_freq_to_offset(freq_str)
 
-        group_cols = self.strata_ + ['trait'] if 'trait' in inc_df.columns else self.strata_
+        group_cols = self.strata_ + ['target'] if 'target' in inc_df.columns else self.strata_
         # Sort to ensure chronological order for time-steps
         groups = inc_df.sort_values('date').groupby(group_cols, observed=True) if group_cols else [('Global', inc_df)]
         
@@ -749,14 +746,7 @@ class GLMIncidenceEstimator(ModelledMixin, BaseEstimator[IncidenceEstimates]):
                     df_pred = pd.concat([df_pred, future_df], ignore_index=True)
                 
                 # Recalculate the mathematical time_step for ALL rows
-                if self.freq_ == TemporalResolution.MONTH.value or self.freq_.startswith('M'):
-                    df_pred['time_step'] = (df_pred['date'].dt.year - min_date.year) * 12 + (df_pred['date'].dt.month - min_date.month)
-                elif self.freq_ == TemporalResolution.WEEK.value or self.freq_.startswith('W'):
-                    df_pred['time_step'] = (df_pred['date'] - min_date).dt.days // 7
-                elif self.freq_ == TemporalResolution.YEAR.value or self.freq_.startswith('Y'):
-                    df_pred['time_step'] = df_pred['date'].dt.year - min_date.year
-                else:
-                    df_pred['time_step'] = (df_pred['date'] - min_date).dt.days
+                df_pred['time_step'] = _calculate_time_steps(df_pred['date'], min_date, self.freq_)
 
                 # Generate predictions
                 X = sm.add_constant(df_pred['time_step'], has_constant='add')
@@ -859,7 +849,7 @@ class BayesianIncidenceEstimator(ModelledMixin, BayesianMixin, BaseEstimator[Inc
         self.strata_ = self.meta_.get("stratified_by", [])
         
         df = inc_df.copy()
-        group_cols = self.strata_ + ['trait'] if 'trait' in df.columns else self.strata_
+        group_cols = self.strata_ + ['target'] if 'target' in df.columns else self.strata_
         
         if not group_cols:
             df['_dummy_group'] = 'Global'
@@ -872,6 +862,16 @@ class BayesianIncidenceEstimator(ModelledMixin, BayesianMixin, BaseEstimator[Inc
             values='variant_count',
             fill_value=0
         )
+        
+        # Filter out empty strata (all 0s) to prevent MCMC gradients from exploding to -inf
+        strata_sums = pivot_df.sum(axis=0)
+        active_cols = strata_sums[strata_sums > 0].index
+        self.inactive_strata_labels_ = strata_sums[strata_sums == 0].index
+        
+        if len(active_cols) == 0:
+            raise ValueError("All strata have zero historical events. Cannot fit the Bayesian model.")
+            
+        pivot_df = pivot_df[active_cols]
         
         self.dates_ = pivot_df.index
         self.T_ = len(self.dates_)
@@ -914,17 +914,13 @@ class BayesianIncidenceEstimator(ModelledMixin, BayesianMixin, BaseEstimator[Inc
         
         # Reconstruct continuous dates, adding the future horizon
         freq_str = self.meta_.get("freq", TemporalResolution.MONTH.value)
-        try:
-            freq = TemporalResolution(freq_str).pandas_offset
-            if not freq: freq = 'MS'
-        except ValueError:
-            freq = 'MS'
+        freq = _parse_freq_to_offset(freq_str)
             
         all_dates = pd.date_range(start=self.dates_[0], periods=self.T_ + self.forecast_horizon, freq=freq)
         
         # Melt the predictions back into long format
         results = []
-        group_cols = self.strata_ + ['trait'] if 'trait' in inc_df.columns else self.strata_
+        group_cols = self.strata_ + ['target'] if 'target' in inc_df.columns else self.strata_
         if not group_cols:
             group_cols = ['_dummy_group']
             
@@ -942,10 +938,23 @@ class BayesianIncidenceEstimator(ModelledMixin, BayesianMixin, BaseEstimator[Inc
                 row['upper'] = float(upper[i, j])
                 results.append(row)
                 
+            for strata_val in self.inactive_strata_labels_:
+                row = {'date': date}
+                if group_cols:
+                    if isinstance(strata_val, tuple):
+                        row.update(zip(group_cols, strata_val))
+                    else:
+                        row[group_cols[0]] = strata_val
+                
+                row['estimate'] = 0.0
+                row['lower'] = 0.0
+                row['upper'] = 0.0
+                results.append(row)
+                
         res_df = pd.DataFrame(results)
         
         # Merge back the original counts (this ensures that historical rows keep variant_count, total_sequenced)
-        merge_cols = ['date'] + (self.strata_ + ['trait'] if 'trait' in inc_df.columns else self.strata_)
+        merge_cols = ['date'] + (self.strata_ + ['target'] if 'target' in inc_df.columns else self.strata_)
         final_df = res_df.merge(inc_df, on=merge_cols, how='left')
         target = self.meta_.get("trait")
         # Build the model summary with incidence rate ratios (drift exponential)
@@ -961,6 +970,18 @@ class BayesianIncidenceEstimator(ModelledMixin, BayesianMixin, BaseEstimator[Inc
             row['IRR'] = float(jnp.exp(drifts[j]))
             row['prob_increasing'] = float(p_vals[j])
             row['status'] = 'Converged'
+            model_res.append(row)
+            
+        for strata_val in self.inactive_strata_labels_:
+            row = {}
+            if group_cols:
+                if isinstance(strata_val, tuple):
+                    row.update(zip(group_cols, strata_val))
+                else:
+                    row[group_cols[0]] = strata_val
+            row['IRR'] = np.nan
+            row['prob_increasing'] = np.nan
+            row['status'] = 'Zero Events'
             model_res.append(row)
             
         return IncidenceEstimates(
@@ -985,6 +1006,24 @@ def _rbf_kernel(X, Z, var, length, jitter=1e-5):
     if X.shape == Z.shape:
         K += jitter * jnp.eye(X.shape[0])
     return K
+
+def _parse_freq_to_offset(freq_str: str) -> str:
+    """Safely parses a TemporalResolution string to a pandas offset."""
+    try:
+        freq = TemporalResolution(freq_str).pandas_offset
+        return freq if freq else 'MS'
+    except ValueError:
+        return 'MS'
+
+def _calculate_time_steps(dates: pd.Series, min_date: pd.Timestamp, freq: str) -> pd.Series:
+    """Converts a datetime series into integer time steps based on frequency."""
+    if freq == TemporalResolution.MONTH.value or freq.startswith('M'):
+        return (dates.dt.year - min_date.year) * 12 + (dates.dt.month - min_date.month)
+    elif freq == TemporalResolution.WEEK.value or freq.startswith('W'):
+        return (dates - min_date).dt.days // 7
+    elif freq == TemporalResolution.YEAR.value or freq.startswith('Y'):
+        return dates.dt.year - min_date.year
+    return (dates - min_date).dt.days
 
 
 # Kernels --------------------------------------------------------------------------------------------------------------

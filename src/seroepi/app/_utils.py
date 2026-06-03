@@ -115,7 +115,8 @@ async def ui_task(error_prefix: str = "Task Error"):
             ui.notification_show(f"{error_prefix}: {str(e)}", type="error", duration=15)
 
 
-async def generate_temp_download(save_func: Callable[[Path], Any], suffix: str, error_prefix: str = "Export Error") -> AsyncGenerator[bytes, None]:
+async def generate_temp_download(save_func: Callable[[Path], Any], suffix: str,
+                                 error_prefix: str = "Export Error") -> AsyncGenerator[bytes, None]:
     """
     Standardizes the creation, writing, and byte-yielding of temporary files for Shiny downloads.
     """
@@ -156,7 +157,7 @@ HYPERPARAM_TOOLTIPS = {
     "num_warmup": "Number of initial warmup steps used to tune the sampler before drawing valid samples.",
     "svi_steps": "Number of optimization steps used to converge the SVI ELBO loss.",
     "seed": "Random seed to ensure the model produces mathematically reproducible results.",
-    "use_relative_incidence": "Adjust raw incidence counts by the total number of genomes sequenced in that period (models relative prevalence).",
+    "use_relative_incidence": "Adjust raw incidence counts by the total number of genomes sequenced in that period (models relative burden).",
     "forecast_horizon": "Number of future time steps to project the model forward past the observed data."
 }
 

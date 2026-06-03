@@ -49,10 +49,10 @@ First, we need to load our LMIC neonatal sepsis dataset.
    and set the **Resolution** to `Country`.
 6. Click **Load Files**. The app will parse, validate, and merge your genomic and spatial data.
 
-#### Step 2: Aggregate the CPS Prevalence
+#### Step 2: Aggregate the CPS burden
 We need to figure out the raw proportions of each K-locus (Capsular Polysaccharide) in our dataset.
 
-1. Navigate to the **Prevalence** 🧮 tab in the sidebar and open the **Prevalence Aggregation** accordion.
+1. Navigate to the **burden** 🧮 tab in the sidebar and open the **burden Aggregation** accordion.
 2. **Trait Column**: Select `K Locus`.
 3. **Aggregation Mode**: Select **Compositional** 🎵🎶 (since we want to know the proportion of all K-loci relative to
    one another, not just the presence/absence of a single gene).
@@ -61,15 +61,15 @@ We need to figure out the raw proportions of each K-locus (Capsular Polysacchari
    zero observations of a specific K-locus.
 6. Click **Aggregate Data**.
 
-#### Step 3: Estimate Bayesian Prevalence
-Now we use a Markov Chain Monte Carlo (MCMC) model to estimate the true population prevalence, drawing power (partial
+#### Step 3: Estimate Bayesian burden
+Now we use a Markov Chain Monte Carlo (MCMC) model to estimate the true population burden, drawing power (partial
 pooling) across our different countries to adjust for sampling biases.
 
-1. Open the **Prevalence Estimation** 📈 accordion.
+1. Open the **burden Estimation** 📈 accordion.
 2. **Estimator**: Select `Bayesian Hierarchical`.
 3. Expand the **Hyperparameters** section. By default, the **Inference Method** is set to `MCMC`. You can leave the
    default samples (1500) and chains (4) as they are.
-4. Click **Estimate Prevalence** 🚀. *Note: MCMC is mathematically rigorous and computationally intensive. It may take
+4. Click **Estimate burden** 🚀. *Note: MCMC is mathematically rigorous and computationally intensive. It may take
    a minute to converge depending on the number of countries and loci.*
 
 #### Step 4: Formulate the Vaccine & Inspect Stability
@@ -99,7 +99,7 @@ Because you didn't clear the memory, the app has safely overwritten the active d
 
 #### Step 6: Forecast Vaccine Longevity
 The Pathogenwatch loader automatically parses temporal metadata (Collection Date). We will use a Bayesian Structural Time Series (BSTS) to forecast how well our LMIC vaccine will cover the HIC population over time.
-1. Navigate to the **Logistics** 🌍 tab in the sidebar.
+1. Navigate to the **forecasting** 🌍 tab in the sidebar.
 2. Open the **Longevity Forecasting** accordion.
 3. **Estimator Model**: Select `Bayesian (BSTS)`.
 4. In the hyperparameters, ensure your **Forecast Horizon** is set to your desired future projection (e.g., 12 months or years, depending on your temporal resolution).

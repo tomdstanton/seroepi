@@ -604,7 +604,7 @@ class ChoroplethPlotter(BasePlotter):
     SUPPORTED_TYPES = (estimators.PrevalenceEstimates,)
 
     @classmethod
-    def render(cls, result: 'estimators.PrevalenceEstimates', geo_col: str = 'spatial', target_variant: str = None,
+    def render(cls, result: 'estimators.PrevalenceEstimates', geo_col: str = None, target_variant: str = None,
                feature_id_key: str = "properties.ADMIN"):
         if not cls.can_render(result):
             raise TypeError(f"{cls.__name__} does not support {type(result).__name__}.")
@@ -613,8 +613,17 @@ class ChoroplethPlotter(BasePlotter):
         """
         data = result.data.copy()
 
-        if geo_col not in result.stratified_by:
-            raise ValueError(f"Cannot plotting choropleth: '{geo_col}' was not used as a stratification variable.")
+        if geo_col is None:
+            # Auto-detect spatial column from the active strata
+            spatial_candidates = [c for c in result.stratified_by if c.startswith(f"{Domain.SPATIAL.value}_")]
+            if spatial_candidates:
+                geo_col = spatial_candidates[0]
+            elif len(result.stratified_by) == 1:
+                geo_col = result.stratified_by[0]  # Fallback to the only available stratification
+            else:
+                raise ValueError("Cannot plot choropleth: Please stratify by a spatial column.")
+        elif geo_col not in result.stratified_by:
+            raise ValueError(f"Cannot plot choropleth: '{geo_col}' was not used as a stratification variable.")
 
         # --- THE FIX: Isolate the specific variant for compositional data ---
         target_name = result.trait

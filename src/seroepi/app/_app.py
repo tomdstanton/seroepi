@@ -10,9 +10,10 @@ import shinyswatch
 from google import genai
 
 from seroepi.app._dataset import dataset_ui, dataset_server
-from seroepi.app._prevalence import prevalence_ui, prevalence_server
+from seroepi.app._burden import burden_ui, burden_server
 from seroepi.app._formulation import formulation_ui, formulation_server
-from seroepi.app._logistics import logistics_ui, logistics_server
+from seroepi.app._coverage import coverage_ui, coverage_server
+from seroepi.app._forecasting import forecasting_ui, forecasting_server
 from seroepi.app._utils import ui_task, generate_temp_download
 
 
@@ -53,9 +54,10 @@ main_ui = ui.page_navbar(
     # Notice we pass a unique ID string to each module function!
     ui.nav_panel("Home 🏠", home_ui("tab_home")),
     ui.nav_panel("1. Dataset 💽", dataset_ui("tab_dataset")),
-    ui.nav_panel("2. Prevalence 🦠", prevalence_ui("tab_prevalence")),
+    ui.nav_panel("2. Burden 🦠", burden_ui("tab_burden")),
     ui.nav_panel("3. Formulation 💉", formulation_ui("tab_formulation")),
-    ui.nav_panel("4. Logistics 🌍", logistics_ui("tab_logistics")),
+    ui.nav_panel("4. Coverage 🛡️", coverage_ui("tab_coverage")),
+    ui.nav_panel("5. Forecasting 🔮", forecasting_ui("tab_forecasting")),
 
     ui.nav_spacer(),  # Pushes everything after this to the right side of the navbar
     ui.nav_control(
@@ -67,11 +69,14 @@ main_ui = ui.page_navbar(
                 **{"data-bs-toggle": "dropdown", "aria-expanded": "false"}
             ),
             ui.div(
-                ui.h6("Manage Workspace", class_="dropdown-header px-0 text-primary fw-bold"),
+                ui.h6("Workspace Summary", class_="dropdown-header px-0 text-primary fw-bold"),
+                ui.output_ui("session_state_summary"),
+                ui.hr(class_="my-2"),
+                ui.h6("Manage Session", class_="dropdown-header px-0 text-primary fw-bold"),
                 ui.download_button("btn_save_workspace", "Save Workspace (.sero)", class_="btn-outline-primary w-100 mb-2"),
                 ui.input_file("workspace_file", "Restore Workspace (.sero)", accept=[".sero"]),
                 class_="dropdown-menu dropdown-menu-end p-3 shadow border-0",
-                style="min-width: 260px;"
+                style="min-width: 280px;"
             ),
             class_="dropdown"
         )
@@ -87,25 +92,8 @@ main_ui = ui.page_navbar(
             ui.div(
                 ui.h6("Select Active Items", class_="dropdown-header px-0 text-primary fw-bold"),
                 ui.input_select("global_dataset", "Dataset", choices={"": "None"}),
-                ui.input_select("global_run", "Prevalence Run", choices={"": "None"}),
+                ui.input_select("global_run", "Burden Run", choices={"": "None"}),
                 ui.input_select("global_vac", "Formulation", choices={"": "None"}),
-                class_="dropdown-menu dropdown-menu-end p-3 shadow border-0",
-                style="min-width: 260px;"
-            ),
-            class_="dropdown"
-        )
-    ),
-    ui.nav_control(
-        ui.div(
-            ui.tags.button(
-                "Session State 📋",
-                class_="btn btn-sm btn-outline-warning mt-1 dropdown-toggle",
-                type="button",
-                **{"data-bs-toggle": "dropdown", "aria-expanded": "false"}
-            ),
-            ui.div(
-                ui.h6("Workspace Summary", class_="dropdown-header px-0 text-primary fw-bold"),
-                ui.output_ui("session_state_summary"),
                 class_="dropdown-menu dropdown-menu-end p-3 shadow border-0",
                 style="min-width: 260px;"
             ),
@@ -175,7 +163,7 @@ def main_server(input, output, session):
         "active_run_name": reactive.Value(None),
         "active_vac_name": reactive.Value(None)
     }
-    
+
     # --- GLOBAL REGISTRY ROUTERS ---
     @reactive.Effect
     def sync_global_dataset_dropdown():
@@ -248,9 +236,10 @@ def main_server(input, output, session):
                 app_state["current_formulation"].set(reg[selected])
 
     dataset_server("tab_dataset", app_state=app_state)
-    prevalence_server("tab_prevalence", app_state=app_state)
+    burden_server("tab_burden", app_state=app_state)
     formulation_server("tab_formulation", app_state=app_state)
-    logistics_server("tab_logistics", app_state=app_state)
+    coverage_server("tab_coverage", app_state=app_state)
+    forecasting_server("tab_forecasting", app_state=app_state)
 
     @render.download(filename=f"{_package}_workspace.sero")
     def btn_save_workspace():
@@ -277,8 +266,8 @@ def main_server(input, output, session):
                 p.set(message="Workspace Restored!", value=100)
                 ui.notification_show("Session successfully restored.", type="message")
 
-                # Expand the prevalence accordion to show data loaded (using the namespace ID!)
-                ui.update_accordion("tab_prevalence-prevalence_accordion", show="Cluster Generation 🕸️")
+                # Expand the burden accordion to show data loaded (using the namespace ID!)
+                ui.update_accordion("tab_burden-burden_accordion", show="Cluster Generation 🍇")
 
     @render.ui
     def session_state_summary():
@@ -301,16 +290,16 @@ def main_server(input, output, session):
 
         if res is not None:
             strata = ", ".join(res.stratified_by) if res.stratified_by else "Global"
-            elements.append(ui.p(ui.tags.strong("Prevalence: "), f"'{res.trait}' by {strata}", class_="mb-2 text-success small"))
+            elements.append(ui.p(ui.tags.strong("Burden: "), f"'{res.trait}' by {strata}", class_="mb-2 text-success small"))
         else:
-            elements.append(ui.p(ui.tags.strong("Prevalence: "), "Not calculated", class_="mb-2 text-muted small"))
+            elements.append(ui.p(ui.tags.strong("Burden: "), "Not calculated", class_="mb-2 text-muted small"))
 
         if est is not None and getattr(est, 'is_fitted_', False):
             est_name = type(est).__name__.replace('PrevalenceEstimator', '')
             elements.append(ui.p(ui.tags.strong("Model: "), f"{est_name} (Fitted)", class_="mb-2 text-success small"))
         else:
             elements.append(ui.p(ui.tags.strong("Model: "), "No active model", class_="mb-2 text-muted small"))
-            
+
         if vac is not None:
             elements.append(ui.p(ui.tags.strong("Formulation: "), f"{vac.max_valency}-valent formulation", class_="mb-2 text-success small"))
         else:
@@ -320,12 +309,12 @@ def main_server(input, output, session):
             elements.append(ui.p(ui.tags.strong("Cached Models: "), f"{len(reg)} runs available", class_="mb-1 text-success small"))
         else:
             elements.append(ui.p(ui.tags.strong("Cached Models: "), "None", class_="mb-1 text-muted small"))
-            
+
         if v_reg := app_state["formulation_registry"].get():
             elements.append(ui.p(ui.tags.strong("Cached Formulations: "), f"{len(v_reg)} formulations available", class_="mb-0 text-success small"))
         else:
             elements.append(ui.p(ui.tags.strong("Cached Formulations: "), "None", class_="mb-0 text-muted small"))
-            
+
         return ui.div(*elements)
 
     # =====================================================================================
@@ -345,10 +334,10 @@ def main_server(input, output, session):
 
         if (df := app_state["shared_df"].get()) is not None:
             sys_prompt_parts.append(f"**Active Dataset**: {df.shape[0]} rows, {df.shape[1]} columns.")
-            
+
         if (res := app_state["prev_results"].get()) is not None:
-            sys_prompt_parts.append(f"**Active Prevalence Run** ({res.method}, Trait: '{res.trait}'):\n```text\n{res.data.head(10).to_string()}\n```")
-            
+            sys_prompt_parts.append(f"**Active burden Run** ({res.method}, Trait: '{res.trait}'):\n```text\n{res.data.head(10).to_string()}\n```")
+
         if (est := app_state["fitted_estimator"].get()) is not None and getattr(est, 'is_fitted_', False):
             sys_prompt_parts.append(f"**Active Model**: {type(est).__name__}")
             if hasattr(est, 'diagnostics'):
@@ -357,20 +346,20 @@ def main_server(input, output, session):
                     sys_prompt_parts.append(f"- **MCMC Diagnostics**:\n```text\n{diag_df.to_string()}\n```")
                 except Exception:
                     pass
-                    
+
         if (vac := app_state["current_formulation"].get()) is not None:
             sys_prompt_parts.append(f"**Active Formulation Formulation** ({vac.max_valency}-valent):")
             sys_prompt_parts.append(f"- **Targets**: {', '.join(vac.get_formulation())}")
             sys_prompt_parts.append(f"- **Top Rankings**:\n```text\n{vac.rankings.head(vac.max_valency).to_string(index=False)}\n```")
             if not vac.stability_metrics.empty:
                 sys_prompt_parts.append(f"- **LOO Stability Metrics**:\n```text\n{vac.stability_metrics.to_string()}\n```")
-                
+
         if reg := app_state["results_registry"].get():
-            sys_prompt_parts.append(f"**Cached Prevalence Runs**: {', '.join(reg.keys())}")
-            
+            sys_prompt_parts.append(f"**Cached burden Runs**: {', '.join(reg.keys())}")
+
         if v_reg := app_state["formulation_registry"].get():
             sys_prompt_parts.append(f"**Cached Formulations**: {', '.join(v_reg.keys())}")
-            
+
         if ds_reg := app_state["dataset_registry"].get():
             sys_prompt_parts.append(f"**Loaded Datasets**: {', '.join(ds_reg.keys())}")
 
@@ -378,7 +367,8 @@ def main_server(input, output, session):
 
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
-            await chat.append_message("⚠️ `GEMINI_API_KEY` environment variable is missing. Please set it to use the AI assistant.")
+            await chat.append_message("⚠️ `GEMINI_API_KEY` environment variable is missing. "
+                                      "Please set it to use the AI assistant.")
             return
 
         # Translate Shiny's message history to Gemini's expected format
@@ -396,12 +386,12 @@ def main_server(input, output, session):
                 contents=gemini_messages,
                 config={"system_instruction": sys_prompt}
             )
-            
+
             # Efficiently unwrap the Gemini text chunks for Shiny's streaming UI
             async def stream_generator():
                 async for chunk in response:
                     if chunk.text: yield chunk.text
-                    
+
             await chat.append_message_stream(stream_generator())
         except Exception as e:
             await chat.append_message(f"Error communicating with AI: {str(e)}")

@@ -29,7 +29,7 @@ class UnpooledPrevalenceEstimator(BaseEstimator[PrevalenceEstimates]):
     def calculate(self, agg_df: pd.DataFrame) -> PrevalenceEstimates:
         """Expects the output of df.epi.aggregate_prevalence()"""
 
-        stratified_by, meta = self._extract_strata(agg_df, exclude_cols=['event', 'n', 'trait'])
+        stratified_by, meta = self._extract_strata(agg_df, exclude_cols=['event', 'n', 'target'])
 
         # Extract vectors for fast numpy math
         counts = agg_df['event'].values
@@ -38,14 +38,12 @@ class UnpooledPrevalenceEstimator(BaseEstimator[PrevalenceEstimates]):
         # Route to the selected mathematical method
         prop, lower, upper = self._method_func(counts, denominators, self.alpha)
 
-        new_cols = {
-            'estimate': np.nan_to_num(prop, nan=0.0),
-            'lower': np.nan_to_num(lower, nan=0.0),
-            'upper': np.nan_to_num(upper, nan=0.0)
-        }
-
-        # 2. Fast horizontal concatenation (ignores the deep copy overhead)
-        result_df = pd.concat([agg_df, pd.DataFrame(new_cols, index=agg_df.index)], axis=1)
+        # Fast assignment (ignores the deep copy overhead)
+        result_df = agg_df.assign(
+            estimate=np.nan_to_num(prop, nan=0.0),
+            lower=np.nan_to_num(lower, nan=0.0),
+            upper=np.nan_to_num(upper, nan=0.0)
+        )
 
         return PrevalenceEstimates(
             data=result_df,
@@ -149,7 +147,7 @@ class BetaDiversityEstimator(BaseEstimator[BetaDiversityEstimates]):
         # Rows = Strata (e.g., Hospitals), Columns = Variants (e.g., K_loci), Values = Counts
         pivot_df = div_df.pivot_table(
             index=strata,
-            columns='trait',
+            columns='target',
             values='variant_count',
             fill_value=0,  # CRITICAL: Missing variants in a group must be explicitly 0
             aggfunc='sum'

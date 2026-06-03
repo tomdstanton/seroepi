@@ -5,7 +5,7 @@ from shiny import ui, module, reactive, render
 
 from seroepi.app._utils import safe_plot_ui, dt_download_ui, dt_download_server, safe_plot_server, ui_task, generate_temp_download, update_registry, export_settings_ui
 from seroepi.constants import PlotType, AggregationType
-from seroepi.formulation import Formulation, CVFormulationDesigner, PostHocFormulationDesigner
+from seroepi.formulation import Formulation, CVFormulationDesigner, PostHocFormulationDesigner, CustomFormulationDesigner
 from seroepi.plotting import render_plot
 
 
@@ -16,7 +16,7 @@ def formulation_ui():
         ui.sidebar(
             ui.accordion(
                 ui.accordion_panel(
-                    "Algorithmic Design 💊",
+                    "Formulation Design 💊",
                     ui.tooltip(ui.input_slider("max_valency", "Trait Valency",
                                                min=2, max=30, value=10, step=1),
                                "The maximum number of distinct variants to include in the optimal formulation formulation."),
@@ -53,7 +53,7 @@ def formulation_ui():
                     ui.output_ui("formulation_export_ui")
                 ),
                 id="formulation_accordion",
-                open=["Algorithmic Design 💊"], multiple=True
+                open=["Formulation Design 💊"], multiple=True
             ),
             width=350
         ),
@@ -81,7 +81,7 @@ def formulation_server(input, output, session, app_state: dict):
     @reactive.Effect
     def manage_accordion_state():
         if prev_results.get() is None:
-            ui.update_accordion("formulation_accordion", show="Algorithmic Design 💊")
+            ui.update_accordion("formulation_accordion", show="Formulation Design 💊")
 
     @reactive.Effect
     def update_form_inputs():
@@ -119,7 +119,7 @@ def formulation_server(input, output, session, app_state: dict):
     async def generate_optimal():
         res, est, agg_df = prev_results.get(), fitted_estimator.get(), shared_agg_df.get()
         if res is None or est is None or agg_df is None:
-            ui.notification_show("Please calculate prevalence and ensure a valid dataset is active.", type="warning")
+            ui.notification_show("Please calculate burden and ensure a valid dataset is active.", type="warning")
             return
 
         if res.aggregation_type != AggregationType.COMPOSITIONAL:
@@ -129,18 +129,20 @@ def formulation_server(input, output, session, app_state: dict):
 
         holdout = input.form_holdout()
 
-        if not holdout or "Not Possible" in holdout or "Awaiting Data" in holdout:
-            ui.notification_show(
-                "Cross-Validation Stratum must be selected. Ensure your prevalence data is stratified in Tab 1.",
-                type="warning")
+        if not holdout or "Awaiting Data" in holdout:
+            ui.notification_show("Please wait for valid burden estimates before designing a formulation.", type="warning")
             return
+            
+        is_global = "Not Possible" in holdout
+        loo_col = None if is_global else holdout
 
         async with ui_task("Designer Error") as p:
                 # We can instantly use the already-calculated results from Tab 1 as the Baseline!
                 baseline_res.set(res)
 
                 designer_type = input.form_designer()
-                p.set(message=f"Running {designer_type.upper()} Designer on {holdout}...", value=50)
+                target_str = "Global Data (No CV)" if is_global else holdout
+                p.set(message=f"Running {designer_type.upper()} Designer on {target_str}...", value=50)
                 await sleep(0)
 
                 loop = get_running_loop()
@@ -148,15 +150,18 @@ def formulation_server(input, output, session, app_state: dict):
                 def ui_progress_callback(current, total):
                     # Safely update the Shiny UI from the background thread
                     percentage = 50 + int(45 * (current / total))
-                    message = f"Running CV Fold {current}/{total}..." if designer_type != 'posthoc' else f"Running Permutation {current}/{total}..."
+                    if is_global:
+                        message = "Generating unstratified baseline formulation..."
+                    else:
+                        message = f"Running CV Fold {current}/{total}..." if designer_type != 'posthoc' else f"Running Permutation {current}/{total}..."
                     loop.call_soon_threadsafe(p.set, percentage, message)
 
                 if designer_type == 'posthoc':
                     designer = PostHocFormulationDesigner(valency=input.max_valency(), n_jobs=-1)
-                    await to_thread(designer.fit, res, loo_col=holdout, progress_callback=ui_progress_callback)
+                    await to_thread(designer.fit, res, loo_col=loo_col, progress_callback=ui_progress_callback)
                 else:
                     designer = CVFormulationDesigner(valency=input.max_valency(), n_jobs=-1)
-                    await to_thread(designer.fit, est, agg_df, loo_col=holdout,
+                    await to_thread(designer.fit, est, agg_df, loo_col=loo_col,
                                             progress_callback=ui_progress_callback)
 
                 optimal_formulation = designer.formulation_
@@ -193,16 +198,17 @@ def formulation_server(input, output, session, app_state: dict):
 
         res = prev_results.get()
         if res is None:
-            ui.notification_show("Please select a valid active prevalence run.", type="warning")
+            ui.notification_show("Please select a valid active burden run.", type="warning")
             return
 
-        custom_formulation = Formulation.from_custom(list(traits), res)
-        current_formulation.set(custom_formulation)
+        designer = CustomFormulationDesigner(targets=list(traits))
+        designer.fit(res)
+        current_formulation.set(designer.formulation_)
         
         # Cache the custom formulation
         run_name = app_state["active_run_name"].get() or "Unknown Run"
-        vac_name = f"Custom {len(traits)}-valent | {run_name}"
-        update_registry(formulation_registry, vac_name, custom_formulation)
+        vac_name = f"Custom {designer.valency}-valent | {run_name}"
+        update_registry(formulation_registry, vac_name, designer.formulation_)
         app_state["active_vac_name"].set(vac_name)
 
         ui.notification_show("Custom formulation evaluated.", type="message")
@@ -248,14 +254,10 @@ def formulation_server(input, output, session, app_state: dict):
         return ui.layout_sidebar(
             ui.sidebar(
                 export_settings_ui("form"),
-                ui.download_button("btn_download_coverage", "Download Coverage Plot", class_="btn-outline-primary w-100 mb-2"),
                 ui.output_ui("dl_stability_btn_ui"),
                 width=280
             ),
-            ui.div(
-                ui.card(ui.card_header("Cumulative Coverage"), safe_plot_ui("coverage_plot")),
-                ui.output_ui("stability_plot_card")
-            )
+            ui.output_ui("stability_plot_card")
         )
 
     @render.ui
@@ -295,24 +297,6 @@ def formulation_server(input, output, session, app_state: dict):
             return ui.download_button("btn_download_stability", "Download Stability Plot", class_="btn-outline-primary w-100")
         return ui.div()
 
-    @reactive.Calc
-    def coverage_plot_data():
-        res = prev_results.get()
-        vac = current_formulation.get()
-        if res is not None and vac is not None:
-            return {"res": res, "formulation": vac}
-        return None
-
-    @render.download(filename=lambda: f"formulation_coverage.{input.form_plot_format()}")
-    def btn_download_coverage():
-        plot_data = coverage_plot_data()
-        if plot_data is None:
-            return
-        fig = render_plot(plot_data, PlotType.CUMULATIVE_COVERAGE)
-        def save_fig(p: Path):
-            fig.write_image(p, format=input.form_plot_format(), width=input.form_plot_width(), height=input.form_plot_height())
-        return generate_temp_download(save_fig, f".{input.form_plot_format()}", "Plot Export Error")
-
     @render.download(filename=lambda: f"formulation_stability.{input.form_plot_format()}")
     def btn_download_stability():
         vac = current_formulation.get()
@@ -333,5 +317,4 @@ def formulation_server(input, output, session, app_state: dict):
                        data_callable=lambda: current_formulation.get().permutation_history if current_formulation.get() else None,
                        filename="formulation_permutation_history.csv")
 
-    safe_plot_server("coverage_plot", data_reactive=coverage_plot_data, plot_type=PlotType.CUMULATIVE_COVERAGE)
     safe_plot_server("stability_plot", data_reactive=current_formulation, plot_type=PlotType.STABILITY_BUMP)

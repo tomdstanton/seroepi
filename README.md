@@ -48,9 +48,10 @@ To ensure clarity across epidemiological modeling and vaccine design, `seroepi` 
 When aggregating data, you specify the overarching *Trait* column, and the resulting DataFrames will standardize the individual variants into a `target` column for unified downstream processing.
 ---
 
-## 💻 Python API Quickstart
+## 💻 API Quickstart
 
-If you prefer working in Jupyter Notebooks or Python scripts, `seroepi` extends standard Pandas DataFrames to make bioinformatics workflows effortless.
+If you prefer working in Jupyter Notebooks or Python scripts, `seroepi` extends standard Pandas DataFrames to make
+bioinformatics workflows effortless.
 
 ### 1. Data Ingestion, Validation & Spatial Cleaning
 ```python
@@ -119,3 +120,24 @@ print(optimal_vaccine.get_formulation())
 
 For a complete deep-dive into the available methods, classes, and architectural concepts, please refer to the fully
 documented **API Reference** (Automatically generated).
+
+---
+
+## People
+
+- [Dr. Tom Stanton](https://wyreslab.com/)
+- [A/Prof. Kelly L. Wyres](https://wyreslab.com/)
+- [Prof. Kathryn E. Holt](https://holtlab.net)
+- [Dr. Ryan R. Wick](https://rrwick.github.io/)
+
+[Contact Kelly and Tom](mailto:kaptive.typing@gmail.com) for help with Kaptive,
+or to report bugs or request features.
+
+---
+
+## References
+
+[^1]: Stanton TD, Keegan SP, Abdulahi JA, Amulele AV, Bates M, et al. (2026) Distribution of capsule and O types in
+    *Klebsiella pneumoniae* causing neonatal sepsis in Africa and South Asia: A meta-analysis of genome-predicted
+    serotype prevalence to inform potential vaccine coverage. PLOS Medicine 23(1): e1004879.
+    <https://doi.org/10.1371/journal.pmed.1004879>

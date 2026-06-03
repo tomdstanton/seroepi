@@ -228,19 +228,63 @@ class EpiAccessor:
             raise ValueError("Spatial columns ('latitude', 'longitude') are missing.")
         return self._obj[['latitude', 'longitude']].astype("Float64")
 
+    # --- Internal Kernel Helpers ---
+
+    def _resolve_temporal_col(self, col: str = None) -> str:
+        """Resolves and validates the temporal datetime column."""
+        df = self._obj
+        if col is None:
+            cols = df.filter(regex=f"^{Domain.TEMPORAL.value}_(?!res_)").columns
+            if not len(cols):
+                raise KeyError("A valid temporal datetime column is required.")
+            col = cols[0]
+        elif not col.startswith(f"{Domain.TEMPORAL.value}_"):
+            col = f"{Domain.TEMPORAL.value}_{col}"
+
+        if col not in df.columns or not pd.api.types.is_datetime64_any_dtype(df[col]):
+            raise TypeError(f"Temporal column '{col}' must be a datetime64 type. Ensure data is parsed via seroepi.io.")
+        return col
+
+    @staticmethod
+    def _resolve_freq(freq: Union[str, TemporalResolution]) -> tuple[str, str, str]:
+        """Resolves frequency inputs into (pandas_offset, pandas_period, raw_value)."""
+        if isinstance(freq, str):
+            try: freq = TemporalResolution(freq)
+            except ValueError: pass
+            
+        if isinstance(freq, TemporalResolution):
+            return freq.pandas_offset, freq.pandas_period, freq.value
+            
+        # Fallback for raw pandas strings
+        return freq, freq.replace('ME', 'M').replace('YE', 'Y'), str(freq)
+
+    def _attach_metadata(self, df: pd.DataFrame, metric_type: MetricType, stratify_by: list[str], 
+                         trait_col: str = None, cluster_col: str = None, pad_zeros: bool = False, extra: dict = None) -> pd.DataFrame:
+        """Standardizes metric metadata attachment."""
+        df.attrs = self._obj.attrs.copy()
+        meta = {
+            "metric_type": metric_type,
+            "stratified_by": stratify_by if trait_col else stratify_by[:-1],
+            "trait": trait_col if trait_col else stratify_by[-1],
+            "aggregation_type": AggregationType.TRAIT if trait_col else AggregationType.COMPOSITIONAL,
+            "adjusted_for": cluster_col,
+            "is_zero_padded": pad_zeros
+        }
+        if extra: meta.update(extra)
+        df.attrs['metric_meta'] = meta
+        return df
+
     # --- Time Series / Epidemic Curve Methods ---
 
-    def _get_spatiotemporal_arrays(self, temporal_col: str) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _get_spatiotemporal_arrays(self, temporal_col: str = None) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Helper to extract and format coordinates and dates for spatial clustering."""
+        temporal_col = self._resolve_temporal_col(temporal_col)
         df = self._obj
         
-        if not pd.api.types.is_datetime64_any_dtype(df[temporal_col]):
-            raise TypeError(f"Temporal column '{temporal_col}' must be a datetime type. Ensure data is parsed via seroepi.io.")
-            
         # Schema guarantees datetime64, so we just safely strip timezones if present
         date_series = df[temporal_col].dt.tz_localize(None)
-        # Coerce coordinates to standard numpy floats
-        coords = np.radians(df[['latitude', 'longitude']].astype(float).values)
+        # Safely pull coordinates using the internal spatial property
+        coords = np.radians(self.spatial.astype(float).values)
         
         # Convert dates to raw days (use float to allow NaNs for missing dates)
         raw_dates = np.full(len(df), np.nan)
@@ -272,18 +316,8 @@ class EpiAccessor:
 
         df = self._obj.copy()
         
-        if isinstance(freq, TemporalResolution):
-            freq_val = freq.pandas_offset
-        else:
-            freq_val = freq
-
-        if temporal_col is None:
-            temporal_col = df.filter(regex=f"^{Domain.TEMPORAL.value}_(?!res_)").columns[0]
-        elif not temporal_col.startswith(f"{Domain.TEMPORAL.value}_"):
-            temporal_col = f"{Domain.TEMPORAL.value}_{temporal_col}"
-
-        if not pd.api.types.is_datetime64_any_dtype(df[temporal_col]):
-            raise TypeError(f"Temporal column '{temporal_col}' must be a datetime type. Ensure data is parsed via seroepi.io.")
+        freq_val, _, _ = self._resolve_freq(freq)
+        temporal_col = self._resolve_temporal_col(temporal_col)
 
         # Set time as index for resampling
         df = df.set_index(temporal_col)
@@ -442,17 +476,7 @@ class EpiAccessor:
         else:
             agg_df = agg_df.rename(columns={stratify_by[-1]: 'target'})
 
-        agg_df.attrs = self._obj.attrs.copy()
-        agg_df.attrs['metric_meta'] = {
-            "metric_type": MetricType.PREVALENCE,
-            "stratified_by": denom_cols,
-            "trait": trait_col if trait_col else stratify_by[-1],
-            "aggregation_type": AggregationType.TRAIT if trait_col else AggregationType.COMPOSITIONAL,
-            "adjusted_for": cluster_col,
-            "is_zero_padded": pad_zeros
-        }
-
-        return agg_df
+        return self._attach_metadata(agg_df, MetricType.PREVALENCE, stratify_by, trait_col, cluster_col, pad_zeros)
 
     def aggregate_diversity(self, stratify_by: list[str], trait_col: str = None,
                             cluster_col: str = None, negative_indicator: Union[str, list[str]] = '-',
@@ -516,17 +540,7 @@ class EpiAccessor:
         if is_trait:
             div_df['target'] = trait_col
 
-        div_df.attrs = self._obj.attrs.copy()
-        div_df.attrs["metric_meta"] = {
-            "metric_type": MetricType.DIVERSITY,
-            "stratified_by": groupers,
-            "trait": trait_col,
-            "aggregation_type": AggregationType.TRAIT if trait_col else AggregationType.COMPOSITIONAL,
-            "adjusted_for": cluster_col,
-            "is_zero_padded": pad_zeros
-        }
-
-        return div_df
+        return self._attach_metadata(div_df, MetricType.DIVERSITY, stratify_by, trait_col, cluster_col, pad_zeros)
 
     def aggregate_incidence(self, stratify_by: list[str], trait_col: str = None, freq: Union[str, TemporalResolution] = TemporalResolution.MONTH,
                             cluster_col: str = None, negative_indicator: Union[str, list[str]] = '-',
@@ -551,24 +565,8 @@ class EpiAccessor:
         """
         df = self._obj.copy()
 
-        if temporal_col is None:
-            temporal_cols = df.filter(regex=f"^{Domain.TEMPORAL.value}_(?!res_)").columns
-            if not len(temporal_cols):
-                raise ValueError("Incidence aggregation requires a valid temporal column.")
-            temporal_col = temporal_cols[0]
-        elif not temporal_col.startswith(f"{Domain.TEMPORAL.value}_"):
-            temporal_col = f"{Domain.TEMPORAL.value}_{temporal_col}"
-
-        if temporal_col not in df.columns or not pd.api.types.is_datetime64_any_dtype(df[temporal_col]):
-            raise ValueError(f"Incidence aggregation requires a valid datetime64 temporal column. '{temporal_col}' invalid.")
-
-        # Translate Pandas 2.2+ point offsets ('ME') to period spans ('M')
-        if isinstance(freq, TemporalResolution):
-            period_freq = freq.pandas_period
-            stored_freq = freq.value
-        else:
-            period_freq = freq.replace('ME', 'M').replace('YE', 'Y')
-            stored_freq = freq
+        temporal_col = self._resolve_temporal_col(temporal_col)
+        _, period_freq, stored_freq = self._resolve_freq(freq)
 
         # Snap dates to the requested frequency bin using the safe string
         df['date_bin'] = df[temporal_col].dt.to_period(period_freq).dt.to_timestamp()
@@ -629,18 +627,7 @@ class EpiAccessor:
         else:
             inc_df = inc_df.rename(columns={stratify_by[-1]: 'target'})
 
-        inc_df.attrs = self._obj.attrs.copy()
-        inc_df.attrs['metric_meta'] = {
-            "metric_type": MetricType.INCIDENCE,
-            "stratified_by": stratify_by if trait_col else stratify_by[:-1],
-            "trait": trait_col if trait_col else stratify_by[-1],
-            "aggregation_type": AggregationType.TRAIT if trait_col else AggregationType.COMPOSITIONAL,
-            "freq": stored_freq,
-            "adjusted_for": cluster_col,
-            "is_zero_padded": pad_zeros
-        }
-
-        return inc_df
+        return self._attach_metadata(inc_df, MetricType.INCIDENCE, stratify_by, trait_col, cluster_col, pad_zeros, {"freq": stored_freq})
 
     def transmission_network(
             self,
@@ -670,22 +657,11 @@ class EpiAccessor:
             raise KeyError(f"Clone column '{clone_col}' not found in DataFrame.")
 
         # Intelligently check for your geo accessor/columns
-        if 'latitude' not in df.columns or 'longitude' not in df.columns:
+        if not self.has_spatial:
             raise KeyError("Spatial clustering requires 'latitude' and 'longitude' columns. "
                            "Ensure geo accessors have parsed coordinates.")
 
-        if temporal_col is None:
-            temporal_cols = df.filter(regex=f"^{Domain.TEMPORAL.value}_(?!res_)").columns
-            if not len(temporal_cols):
-                raise KeyError("A temporal column is required for temporal clustering.")
-            temporal_col = temporal_cols[0]
-        elif not temporal_col.startswith(f"{Domain.TEMPORAL.value}_"):
-            temporal_col = f"{Domain.TEMPORAL.value}_{temporal_col}"
-
-        if temporal_col not in df.columns:
-            raise KeyError(f"Temporal column '{temporal_col}' not found.")
-
-        df = self._obj
+        temporal_col = self._resolve_temporal_col(temporal_col)
         coords, raw_dates, _ = self._get_spatiotemporal_arrays(temporal_col)
 
         return TransmissionDistances.from_spatiotemporal(
@@ -707,14 +683,7 @@ class EpiAccessor:
     ) -> pd.Series:
         """Extracts and formats categorical cluster labels from the transmission network."""
         df = self._obj
-        
-        if temporal_col is None:
-            temporal_cols = df.filter(regex=f"^{Domain.TEMPORAL.value}_(?!res_)").columns
-            if not len(temporal_cols):
-                raise KeyError("A temporal column is required for temporal clustering.")
-            temporal_col = temporal_cols[0]
-        elif not temporal_col.startswith(f"{Domain.TEMPORAL.value}_"):
-            temporal_col = f"{Domain.TEMPORAL.value}_{temporal_col}"
+        temporal_col = self._resolve_temporal_col(temporal_col)
 
         if network is None:
             network = self.transmission_network(clone_col, spatial_threshold_km, temporal_threshold_days, temporal_col)

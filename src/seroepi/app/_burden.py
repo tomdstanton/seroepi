@@ -11,7 +11,7 @@ from seroepi.plotting import render_plot
 
 
 @module.ui
-def prevalence_ui():
+def burden_ui():
     """UI layout for the global epidemiology dashboard."""
     return ui.layout_sidebar(
         ui.sidebar(
@@ -35,28 +35,28 @@ def prevalence_ui():
                     ),
                     ui.tooltip(ui.input_selectize("prev_stratify", "Stratify By", choices=[], multiple=True,
                                                   options={"placeholder": "Optional, none selected..."}),
-                               "Variables to group the data by (e.g., Spatial, Date) before calculating prevalence."),
-                    ui.tooltip(ui.input_selectize("prev_cluster", "Cluster Column (Optional)", choices=[],
+                               "Variables to group the data by (e.g., Spatial, Date) before calculating burden."),
+                    ui.tooltip(ui.input_selectize("prev_cluster", "Cluster Column 🍇 (Optional)", choices=[],
                                                   options={"placeholder": "Optional, none selected..."}),
                                "A cluster variable (e.g., Transmission Cluster, Hospital) to adjust the "
-                               "prevalence estimates for sampling bias/outbreaks."),
+                               "burden estimates for sampling bias/outbreaks."),
                     ui.tooltip(ui.input_text("prev_negative", "Negative Indicator", value="-"),
                                "The string or character in your data that indicates a trait is absent (commonly '-' or '0')."),
                     ui.tooltip(
                         ui.input_checkbox("prev_pad_zeros", "Pad Zeroes (Zero-fill missing)", value=False),
                         "Pads missing combinations of strata with zero counts. Essential for Spatial and Hierarchical Bayesian models to map empty regions correctly."
                     ),
-                    ui.input_action_button("btn_aggregate_prev", "Aggregate Data", class_="btn-primary w-100 mt-3")
+                    ui.input_action_button("btn_aggregate_prev", "Aggregate Data 🧮", class_="btn-primary w-100 mt-3")
                 ),
                 ui.accordion_panel(
                     "Prevalence Estimation 📈",
                     ui.tooltip(ui.input_select("prev_estimator", "Estimator", choices=EstimatorType.ui_labels()),
-                               "The statistical model used to calculate prevalence and confidence intervals."),
+                               "The statistical model used to calculate burden and confidence intervals."),
                     ui.output_ui("estimator_params_ui"),
                     ui.output_ui("model_io_ui"),
-                    ui.input_action_button("btn_estimate_prev", "Estimate Prevalence 🚀", class_="btn-primary w-100")
+                    ui.input_action_button("btn_estimate_prev", "Estimate Burden 🚀", class_="btn-primary w-100")
                 ),
-                id="prevalence_accordion",
+                id="burden_accordion",
                 open=["Prevalence Aggregation 🧮"], multiple=True
             ),
             width=350
@@ -77,10 +77,10 @@ def prevalence_ui():
                                     PlotType.FOREST.value: "Forest Plot",
                                     PlotType.COMPOSITION_BAR.value: "Composition Bar",
                                     PlotType.COMPOSITION_HEATMAP.value: "Composition Heatmap",
-                                    PlotType.LONGITUDINAL_PREVALENCE.value: "Longitudinal Prevalence"
+                                    PlotType.LONGITUDINAL_PREVALENCE: "Longitudinal Prevalence",
                                 }
                             ),
-                            "The visualization style for the estimated prevalence data."
+                            "The visualization style for the estimated burden data."
                         ),
                         ui.hr(),
                         export_settings_ui("prev"),
@@ -97,7 +97,7 @@ def prevalence_ui():
 
 
 @module.server
-def prevalence_server(input, output, session, app_state: dict):
+def burden_server(input, output, session, app_state: dict):
     shared_df = app_state["shared_df"]
     shared_agg_df = app_state["shared_agg_df"]
     prev_results = app_state["prev_results"]
@@ -107,9 +107,9 @@ def prevalence_server(input, output, session, app_state: dict):
     @reactive.Effect
     def manage_accordion_state():
         if shared_df.get() is None:
-            ui.update_accordion("prevalence_accordion", show="Prevalence Aggregation 🧮")
+            ui.update_accordion("burden_accordion", show="Prevalence Aggregation 🧮")
 
-    # --- STAGE 3: PREVALENCE ANALYSIS WORKFLOW ---
+    # --- STAGE 3: burden ANALYSIS WORKFLOW ---
     @reactive.Effect
     def update_prev_dropdowns():
         try:
@@ -226,7 +226,7 @@ def prevalence_server(input, output, session, app_state: dict):
         stratify = list(input.prev_stratify())
 
         if agg_mode == AggregationType.TRAIT and not stratify:
-            ui.notification_show("Trait prevalence requires at least one stratification column.", type="error")
+            ui.notification_show("Trait burden requires at least one stratification column.", type="error")
             return
 
         # INTENT ROUTING:
@@ -256,12 +256,12 @@ def prevalence_server(input, output, session, app_state: dict):
             shared_agg_df.set(agg_df)
             p.set(message="Done!", value=100)
             ui.notification_show("Data aggregated successfully!", type="message")
-            ui.update_accordion("prevalence_accordion", show="Prevalence Estimation 📈")
+            ui.update_accordion("burden_accordion", show="Prevalence Estimation 📈")
             ui.update_navset("main_dashboard_tabs", selected="tab_aggregated_data")
 
     @reactive.Effect
     @reactive.event(input.btn_estimate_prev)
-    async def estimate_prevalence():
+    async def estimate_burden():
         if (agg_df := shared_agg_df.get()) is None:
             ui.notification_show("Please aggregate data first.", type="warning")
             return
@@ -317,8 +317,8 @@ def prevalence_server(input, output, session, app_state: dict):
                     exclude=['self', 'target_event', 'target_n', 'lat_col', 'lon_col']
                 )
 
-                # Ensure SpatialPrevalenceEstimator maps correctly to Pandas generated columns
-                if estimator_class_name == "SpatialPrevalenceEstimator":
+                # Ensure SpatialburdenEstimator maps correctly to Pandas generated columns
+                if estimator_class_name == "SpatialburdenEstimator":
                     kwargs['lat_col'] = 'latitude'
                     kwargs['lon_col'] = 'longitude'
 
@@ -366,7 +366,7 @@ def prevalence_server(input, output, session, app_state: dict):
     @render.ui
     def prev_summary_content():
         if (res := prev_results.get()) is None:
-            return ui.div("Calculate prevalence to view the results data.", class_="text-center mt-5 text-muted fs-4")
+            return ui.div("Calculate burden to view the results data.", class_="text-center mt-5 text-muted fs-4")
 
         # Dynamically extract instance attributes into a dictionary
         meta_dict = {f.name: getattr(res, f.name) for f in fields(res) if
@@ -384,7 +384,7 @@ def prevalence_server(input, output, session, app_state: dict):
     @render.ui
     def model_diagnostics_content():
         if (est := fitted_estimator.get()) is None:
-            return ui.div("Estimate prevalence to view model diagnostics.", class_="text-center mt-5 text-muted fs-4")
+            return ui.div("Estimate burden to view model diagnostics.", class_="text-center mt-5 text-muted fs-4")
 
         if not hasattr(est, 'diagnostics'):
             return ui.div(
@@ -413,12 +413,12 @@ def prevalence_server(input, output, session, app_state: dict):
     @render.ui
     def prev_plot_content():
         if prev_results.get() is None:
-            return ui.div("Calculate prevalence to view the plot.", class_="text-center mt-5 text-muted fs-4")
+            return ui.div("Calculate burden to view the plot.", class_="text-center mt-5 text-muted fs-4")
         return safe_plot_ui("prev_plot")
 
     safe_plot_server("prev_plot", data_reactive=prev_results, plot_type=input.prev_plot_type)
 
-    @render.download(filename=lambda: f"prevalence_plot.{input.prev_plot_format()}")
+    @render.download(filename=lambda: f"burden_plot.{input.prev_plot_format()}")
     def btn_download_plot():
         res = prev_results.get()
         if res is None:
