@@ -2,15 +2,15 @@
 
 `seroepi` is a comprehensive Python toolkit and interactive Shiny dashboard for the epidemiological, geospatial, and genotypic analysis of pathogen isolates.
 
-Built seamlessly on top of `pandas`, it is specifically designed to ingest output from genomic pipelines (like **Kleborate** and **Pathogenwatch**), calculate statistical burdens, map spatial transmissions, and computationally design optimal vaccine formulations.
+Built seamlessly on top of `polars`, it is specifically designed to ingest output from genomic pipelines (like **Kleborate** and **Pathogenwatch**), calculate statistical burdens, map spatial transmissions, and computationally design optimal vaccine formulations.
 
 ---
 
 ## ✨ What You Can Do
 
-- **Robust Data Stewardship**: Validate inputs seamlessly against our `UnifiedIsolateSchema` (powered by Pandera) to ensure completely standardized genotypic, spatial, and temporal datasets.
+- **Robust Data Stewardship**: Validate inputs seamlessly against our `SampleModel` (powered by Patito) to ensure completely standardized genotypic, spatial, and temporal datasets.
 - **Interactive Dashboarding**: Launch a beautifully designed, dark-mode Shiny app to explore your data, train models, and generate publication-ready plots instantly.
-- **Smart Pandas Accessors**: Clean coordinates, query AMR genes, and generate epidemic curves natively using `df.geo`, `df.geno`, `df.epi`, and `df.qc`.
+- **Domain Accessors & Mixins**: Clean coordinates, query AMR genes, and generate epidemic curves natively using `SeroEpiDataset` and domain mixins (`GeoMixin`, `EpiMixin`, `GenoMixin`, `QcMixin`).
 - **Robust Statistical Modeling**: Estimate global and regional prevalence using Frequentist, Bayesian MCMC/SVI, and Gaussian Process (GP) Spatial models.
 - **Vaccine Formulation Engine**: Use rigorous Leave-One-Out (LOO) cross-validation to algorithmically identify the most stable and high-coverage target antigens (e.g., K-loci) for vaccine design.
 - **Outbreak & Transmission Clustering**: Instantly generate transmission networks and spatial cliques using SNP distance matrices and spatiotemporal thresholds.
@@ -50,25 +50,28 @@ When aggregating data, you specify the overarching *Trait* column, and the resul
 
 ## 💻 API Quickstart
 
-If you prefer working in Jupyter Notebooks or Python scripts, `seroepi` extends standard Pandas DataFrames to make
+If you prefer working in Jupyter Notebooks or Python scripts, `seroepi` provides domain-driven data structures to make
 bioinformatics workflows effortless.
 
 ### 1. Data Ingestion, Validation & Spatial Cleaning
 ```python
-import pandas as pd
+import polars as pl
+from seroepi import SeroEpiDataset
 from seroepi.io import PathogenwatchKleborateParser
-import seroepi.accessors  # Magically registers .epi, .geo, .geno, .qc
 
 # Load your Kleborate output and optional Metadata
-# Parse, merge, and strictly validate against the UnifiedIsolateSchema
+# Parse, merge, and strictly validate against the SampleModel
 df = PathogenwatchKleborateParser.parse(
-    pd.read_csv("kleborate_results.csv"),
-    meta_df=pd.read_csv("metadata.csv"),
-    meta_kwargs={"id_col": "sample_id", "country_col": "country"}
+    pl.read_csv("kleborate_results.csv"),
+    meta_df=pl.read_csv("metadata.csv"),
+    meta_kwargs={"id_col": "sample_id", "country_col": "country"},
 )
 
+# Instantiate SeroEpiDataset container
+ds = SeroEpiDataset(data=df, name="Surveillance Cohort")
+
 # Automatically impute missing coordinates based on Country names!
-df = df.geo.standardize_and_impute()
+ds_clean = ds.standardize_and_impute()
 ```
 
 ### 2. Genomic Clustering
@@ -82,22 +85,24 @@ dist = Distances.from_pathogenwatch("distances.csv")
 clusters = dist.connected_components(threshold=20)
 
 # Merge straight back into your dataframe
-df = df.join(clusters, on='sample_id')
+df = df.join(clusters, on="sample_id")
 ```
 
 ### 3. Prevalence Estimation & Plotting
 ```python
-from seroepi.estimators import FrequentistPrevalenceEstimator
+from seroepi.estimators import UnpooledPrevalenceEstimator
+from seroepi.domains import render_plot
+from seroepi.constants import PlotType
 
 # Aggregate the data to find the prevalence of K-loci across different countries
-agg_df = df.epi.aggregate_prevalence(stratify_by=['country'], trait_col='K_locus')
+agg_df = ds_clean.aggregate_prevalence(stratify_by=["country"], trait_col="K_locus")
 
 # Fit the estimator
-estimator = FrequentistPrevalenceEstimator(method='wilson')
+estimator = UnpooledPrevalenceEstimator(method="wilson")
 results = estimator.calculate(agg_df)
 
 # Generate a publication-ready Plotly Forest Plot
-fig = results.plot('forest')
+fig = render_plot(results, PlotType.FOREST)
 fig.show()
 ```
 
@@ -107,7 +112,7 @@ from seroepi.formulation import CVFormulationDesigner
 
 # Design a 6-valent vaccine, using 'country' as the cross-validation holdout
 designer = CVFormulationDesigner(valency=6, n_jobs=-1)
-designer.fit(estimator, agg_df, loo_col='country')
+designer.fit(estimator, agg_df, loo_col="country")
 
 # View the most stable optimal targets
 optimal_vaccine = designer.formulation_
@@ -130,7 +135,7 @@ documented **API Reference** (Automatically generated).
 - [Prof. Kathryn E. Holt](https://holtlab.net)
 - [Dr. Ryan R. Wick](https://rrwick.github.io/)
 
-[Contact Kelly and Tom](mailto:kaptive.typing@gmail.com) for help with Kaptive,
+[Contact Tom Stanton](mailto:tomdstanton@gmail.com) for help with SeroEpi,
 or to report bugs or request features.
 
 ---

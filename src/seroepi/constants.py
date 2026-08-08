@@ -1,27 +1,14 @@
-"""
-Enums for non-user-facing API constants - mostly to help with the app
-"""
+"""Enums for non-user-facing API constants - mostly to help with the app"""  # noqa: D415
+
+from enum import StrEnum, auto
+from typing import Any
+
+# Enums ----------------------------------------------------------------------------------------------------------------
 from enum import StrEnum, auto
 
 
-# Enums ----------------------------------------------------------------------------------------------------------------
-class _UiEnum(StrEnum):
 
-    @classmethod
-    def choices(cls) -> list[str]:
-        """Returns a raw list of strings for simple dropdowns."""
-        return [e.value for e in cls]
-
-    @classmethod
-    def ui_labels(cls) -> dict[str, str]:
-        """
-        Returns a dictionary mapping the strict value to a pretty UI label.
-        e.g., {"transmission_cluster": "Transmission Cluster"}
-        """
-        return {e.value: e.value.replace('_', ' ').title() for e in cls}
-
-
-class PlotType(_UiEnum):
+class PlotType(StrEnum):  # noqa: D101
     FOREST = auto()
     EPICURVE = auto()
     CHOROPLETH = auto()
@@ -35,26 +22,108 @@ class PlotType(_UiEnum):
     BETA_HEATMAP = auto()
     NETWORK = auto()
     LONGEVITY = auto()
+    PYRAMID = auto()
 
 
-class HoldoutStrategy(_UiEnum):
+class HoldoutStrategy(StrEnum):  # noqa: D101
     COUNTRY = auto()
     TRANSMISSION_CLUSTER = auto()
     STUDY = auto()
 
 
-class MetricType(_UiEnum):
+class FormulationStrategy(StrEnum):
+    """The theoretical approach used to design a vaccine formulation."""
+    POSTHOC = "posthoc"
+    CROSS_VALIDATED = "cv"
+    CUSTOM = "custom"
+    GREEDY_COVERAGE = "greedy"
+
+    @classmethod
+    def ui_labels(cls) -> dict[Any, str]:
+        return {
+            cls.POSTHOC.value: "Post-Hoc (Fast)",
+            cls.CROSS_VALIDATED.value: "Cross-Validated (Rigorous)",
+            cls.CUSTOM.value: "Custom Override",
+            cls.GREEDY_COVERAGE.value: "Greedy Coverage",
+        }
+        
+    @classmethod
+    def designer_ui_labels(cls) -> dict[str, str]:
+        return {
+            cls.POSTHOC.value: "Post-Hoc (Fast)",
+            cls.CROSS_VALIDATED.value: "Cross-Validated (Rigorous)",
+        }
+
+
+class EpidemiologicalDomain(StrEnum):  # noqa: D101
     PREVALENCE = auto()
     DIVERSITY = auto()
     INCIDENCE = auto()
+    SEROLOGY = auto()
+    FORCE_OF_INFECTION = auto()
 
 
-class AggregationType(_UiEnum):
+class AggregationType(StrEnum):  # noqa: D101
     TRAIT = auto()
     COMPOSITIONAL = auto()
 
+    @classmethod
+    def ui_labels(cls) -> dict[str, str]:
+        return {
+            cls.COMPOSITIONAL.value: "Compositional",
+            cls.TRAIT.value: "Trait",
+        }
 
-class Domain(_UiEnum):
+
+class ConfidenceIntervalMethod(StrEnum):
+    WILSON = "wilson"
+    WALD = "wald"
+    AGRESTI_COULL = "agresti_coull"
+    CLOPPER_PEARSON = "clopper_pearson"
+    JEFFREYS = "jeffreys"
+    
+    @classmethod
+    def ui_labels(cls) -> dict[str, str]:
+        return {
+            cls.WILSON.value: "Wilson Score",
+            cls.WALD.value: "Wald",
+            cls.AGRESTI_COULL.value: "Agresti-Coull",
+            cls.CLOPPER_PEARSON.value: "Clopper-Pearson (Exact)",
+            cls.JEFFREYS.value: "Jeffreys",
+        }
+
+
+class AlphaDiversityMetric(StrEnum):
+    SHANNON = "shannon"
+    SIMPSON = "simpson"
+    RICHNESS = "richness"
+    
+    @classmethod
+    def ui_labels(cls) -> dict[str, str]:
+        return {
+            cls.SHANNON.value: "Shannon Index",
+            cls.SIMPSON.value: "Simpson Index",
+            cls.RICHNESS.value: "Richness",
+        }
+
+
+class BetaDiversityMetric(StrEnum):
+    BRAYCURTIS = "braycurtis"
+    JACCARD = "jaccard"
+    EUCLIDEAN = "euclidean"
+    CITYBLOCK = "cityblock"
+    
+    @classmethod
+    def ui_labels(cls) -> dict[str, str]:
+        return {
+            cls.BRAYCURTIS.value: "Bray-Curtis",
+            cls.JACCARD.value: "Jaccard",
+            cls.EUCLIDEAN.value: "Euclidean",
+            cls.CITYBLOCK.value: "Manhattan (Cityblock)",
+        }
+
+
+class Domain(StrEnum):  # noqa: D101
     AMR = auto()
     VIRULENCE = auto()
     QC = auto()
@@ -67,33 +136,33 @@ class Domain(_UiEnum):
     CLUSTER = auto()
 
 
-class DistanceFlavour(_UiEnum):
+class DistanceFlavour(StrEnum):  # noqa: D101
     PATHOGENWATCH = auto()
     SKA2 = auto()
     NEWICK = auto()
 
 
-class GenotypeFlavour(_UiEnum):
+class GenotypeFlavour(StrEnum):  # noqa: D101
     PATHOGENWATCH_KLEBORATE = "pathogenwatch-kleborate"
 
 
-class EstimatorType(_UiEnum):
+class EstimatorType(StrEnum):  # noqa: D101
     UNPOOLED = auto()
     GLM = auto()
     BAYESIAN = auto()
     SPATIAL = auto()
 
     @classmethod
-    def ui_labels(cls) -> dict[str, str]:
+    def ui_labels(cls) -> dict[Any, str]:  # noqa: D102
         return {
-            cls.UNPOOLED.value: "Frequentist (Unpooled CIs)",
-            cls.GLM.value: "Frequentist (GLM)",
-            cls.BAYESIAN.value: "Bayesian (Hierarchical)",
-            cls.SPATIAL.value: "Bayesian (Spatial GP)",
+            cls.UNPOOLED: "Frequentist (Unpooled CIs)",
+            cls.GLM: "Frequentist (GLM)",
+            cls.BAYESIAN: "Bayesian (Hierarchical)",
+            cls.SPATIAL: "Bayesian (Spatial GP)",
         }
 
     @property
-    def class_name(self) -> str:
+    def class_name(self) -> str:  # noqa: D102
         return {
             self.UNPOOLED: "UnpooledPrevalenceEstimator",
             self.BAYESIAN: "BayesianPrevalenceEstimator",
@@ -102,12 +171,12 @@ class EstimatorType(_UiEnum):
         }[self]
 
 
-class BayesianInferenceMethod(_UiEnum):
+class BayesianInferenceMethod(StrEnum):  # noqa: D101
     MCMC = auto()
     SVI = auto()
 
 
-class TemporalResolution(_UiEnum):
+class TemporalResolution(StrEnum):  # noqa: D101
     YEAR = auto()
     MONTH = auto()
     WEEK = auto()
@@ -115,33 +184,22 @@ class TemporalResolution(_UiEnum):
     UNKNOWN = auto()
 
     @classmethod
-    def _missing_(cls, value):
+    def _missing_(cls, value):  # noqa: ANN001, ANN206
         return cls.UNKNOWN
 
     @property
-    def pandas_offset(self) -> str:
-        """Returns the modern Pandas 2.2+ start-offset alias."""
+    def polars_interval(self) -> str:
+        """Returns Polars duration/interval string for dt.truncate or group_by_dynamic."""  # noqa: D421
         return {
-            self.YEAR: 'YS',
-            self.MONTH: 'MS',
-            self.WEEK: 'W-MON',
-            self.DAY: 'D',
-            self.UNKNOWN: ''
-        }[self]
-
-    @property
-    def pandas_period(self) -> str:
-        """Returns the Pandas period alias."""
-        return {
-            self.YEAR: 'Y',
-            self.MONTH: 'M',
-            self.WEEK: 'W',
-            self.DAY: 'D',
-            self.UNKNOWN: ''
+            self.YEAR: "1y",
+            self.MONTH: "1mo",
+            self.WEEK: "1w",
+            self.DAY: "1d",
+            self.UNKNOWN: "",
         }[self]
 
 
-class SpatialResolution(_UiEnum):
+class SpatialResolution(StrEnum):  # noqa: D101
     GLOBAL = auto()
     CONTINENT = auto()
     REGION = auto()
@@ -152,13 +210,12 @@ class SpatialResolution(_UiEnum):
     UNKNOWN = auto()
 
     @classmethod
-    def _missing_(cls, value):
+    def _missing_(cls, value):  # noqa: ANN001, ANN206
         return cls.UNKNOWN
 
 
-class DistanceMetricType(StrEnum):
-    """
-    Enumeration of supported metric types for pairwise comparisons.
+class DistanceEpidemiologicalDomain(StrEnum):
+    """Enumeration of supported metric types for pairwise comparisons.
 
     These metric types define how to interpret the numerical values
     in a distance/similarity matrix.
@@ -169,13 +226,14 @@ class DistanceMetricType(StrEnum):
         ABSOLUTE_SIMILARITY: An absolute similarity measure (e.g., 95 shared nucleotides).
         RELATIVE_SIMILARITY: A relative similarity measure typically between 0.0 and 1.0 (e.g., 0.95 Jaccard).
     """
+
     ABSOLUTE_DISTANCE = auto()  # e.g., 5 SNPs
     RELATIVE_DISTANCE = auto()  # e.g., 0.05 Hamming
     ABSOLUTE_SIMILARITY = auto()  # e.g., 95 shared nucleotides
     RELATIVE_SIMILARITY = auto()  # e.g., 0.95 Jaccard
 
     @classmethod
-    def _missing_(cls, value):
+    def _missing_(cls, value):  # noqa: ANN001, ANN206
         if isinstance(value, str):
             if v := cls.__members__.get(value.upper().replace(" ", "_").replace("-", "_")):
                 return v

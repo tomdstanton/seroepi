@@ -1,20 +1,21 @@
-"""
-Module for estimating trait prevalence, diversity and incidence among isolates.
-"""
+"""Module for estimating trait prevalence, diversity and incidence among isolates."""
 
-from ._base import (
+from .base import (
     AlphaDiversityEstimates,
     BaseEstimator,
     BetaDiversityEstimates,
     Estimates,
+    ForceOfInfectionEstimates,
     IncidenceEstimates,
     PrevalenceEstimates,
+    SeropositivityEstimates,
+    VaccineCoverageEstimates,
 )
-from ._core import (
+from .diversity import (
     AlphaDiversityEstimator,
     BetaDiversityEstimator,
-    UnpooledPrevalenceEstimator,
 )
+from .prevalence import UnpooledPrevalenceEstimator
 
 __all__ = (
     "AlphaDiversityEstimates",
@@ -23,20 +24,28 @@ __all__ = (
     "BetaDiversityEstimates",
     "BetaDiversityEstimator",
     "Estimates",
+    "ForceOfInfectionEstimates",
     "IncidenceEstimates",
     "PrevalenceEstimates",
+    "SeropositivityEstimates",
     "UnpooledPrevalenceEstimator",
+    "VaccineCoverageEstimates",
 )
 
 try:
-    from ._modelled import (
-        BayesianIncidenceEstimator,
-        BayesianMixin,
+    from .mixins import ModelledMixin, BayesianMixin
+    from .prevalence import (
         BayesianPrevalenceEstimator,
-        GLMIncidenceEstimator,
         GLMPrevalenceEstimator,
-        ModelledMixin,
         SpatialPrevalenceEstimator,
+    )
+    from .incidence import (
+        BayesianIncidenceEstimator,
+        GLMIncidenceEstimator,
+    )
+    from .serology import (
+        SerocatalyticEstimator,
+        TiterClassificationEstimator,
     )
 
     __all__ += (
@@ -46,7 +55,9 @@ try:
         "GLMIncidenceEstimator",
         "GLMPrevalenceEstimator",
         "ModelledMixin",
+        "SerocatalyticEstimator",
         "SpatialPrevalenceEstimator",
+        "TiterClassificationEstimator",
     )
 except ImportError:
     pass

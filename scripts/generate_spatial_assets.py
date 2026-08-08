@@ -5,6 +5,7 @@ from pathlib import Path
 # Inject src/ into path so we can import from seroepi when running as a standalone script
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from seroepi.constants import SpatialResolution
+
 try:
     import geopandas as gpd
 except ImportError:
@@ -31,16 +32,16 @@ def main():
     # Build the nested dictionary: {'Nigeria': {'iso3': 'NGA', 'lat': ..., 'lon': ...}}
     gazetteer_dict = {}
     for idx, row in gdf.iterrows():
-        country_name = row['ADMIN']
+        country_name = row["ADMIN"]
         # Wrap the rounded numpy values in the native Python float() function
         native_lon = float(round(centroids.x[idx], 4))
         native_lat = float(round(centroids.y[idx], 4))
         gazetteer_dict[country_name] = {
-            'iso3': row['ADM0_A3'],
-            'region': row['SUBREGION'],
-            'spatial_resolution': SpatialResolution.COUNTRY.value,
-            'centroid_lon': native_lon,
-            'centroid_lat': native_lat
+            "iso3": row["ADM0_A3"],
+            "region": row["SUBREGION"],
+            "spatial_resolution": SpatialResolution.COUNTRY.value,
+            "centroid_lon": native_lon,
+            "centroid_lat": native_lat,
         }
 
     # Write the dictionary to a valid Python file
@@ -55,12 +56,12 @@ def main():
     # --- ARTIFACT 2: The Plotly Boundaries (GeoJSON) ---
     print("Generating world_boundaries.geojson...")
     # Simplify the geometry for the web
-    gdf['geometry'] = gdf['geometry'].simplify(tolerance=0.05)
+    gdf["geometry"] = gdf["geometry"].simplify(tolerance=0.05)
 
     # Keep only what Plotly needs (Added ADMIN so choropleth can match on spatial names)
-    minimal_gdf = gdf[['ADMIN', 'ADM0_A3', 'geometry']]
+    minimal_gdf = gdf[["ADMIN", "ADM0_A3", "geometry"]]
 
-    minimal_gdf.to_file(out_dir / 'world_boundaries.geojson', driver='GeoJSON')
+    minimal_gdf.to_file(out_dir / "world_boundaries.geojson", driver="GeoJSON")
     print("Done! Assets safely bundled in seroepi/data/")
 
 

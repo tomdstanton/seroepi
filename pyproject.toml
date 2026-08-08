@@ -3,50 +3,74 @@ authors = [{name = "Tom Stanton", email = "tomdstanton@gmail.com"}]
 name = "seroepi"
 dynamic = ["version"]
 description = "A Python library for bacterial sero-epidemiology"
+readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.11"
+keywords = ["bioinformatics", "genomics", "serotyping", "microbiology"]
+license = { file = "LICENSE" }
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Topic :: Scientific/Engineering :: Medical Science Apps.",
+    "Typing :: Typed",
+]
 dependencies = [
-    "pandas>=3.0.0",
+    "polars>=1.0.0",
+    "patito>=0.8.0",
     "pyarrow",
     "numpy",
     "scipy",
     "scikit-learn>=1.8.0",
-    "pandera",
     "shapely>=2.1.2",
+    "pycountry>=22.3.5",
+    "joblib>=1.3.2",
+    "networkx>=3.6.1",
 ]
 
-[project.urls]
-Homepage = "https://github.com/tomdstanton/seroepi"
-"Bug Tracker" = "https://github.com/tomdstanton/seroepi/issues"
-
-# THESE ARE FOR END-USERS (Enables: pip install seroepi[plot,models])
 [project.optional-dependencies]
-models = ["numpyro", "statsmodels", "joblib"]
-client = ["requests", "urllib3"]
+models = ["numpyro", "statsmodels"]
+client = ["requests", "urllib3", "orjson"]
 plot = ["plotly>=6.6.0", "kaleido"]
 app = [
     "seroepi[models,client,plot]",
     "shiny",
     "shinywidgets",
     "shinyswatch",
-    "google-genai"
+    "google-genai",
+    "lucide>=1.1.4",
+]
+all = ["seroepi[app]"]
+
+[dependency-groups]
+docs = [
+    "seroepi[all]",
+    "zensical",
+    "mkdocstrings[python]",
+]
+dev = [
+    {include-group = "docs"},
 ]
 
-# THESE ARE ONLY FOR YOU (Local development, testing, and docs)
-[dependency-groups]
-test = ["pytest", "pytest-cov"]
-docs = ["zensical>=0.0.29", "mkdocstrings-python>=2.0.3"]
-dev = [
-    "seroepi[app]", # Installs all user extras into your dev environment
-    {include-group = "test"},
-    {include-group = "docs"}
-]
+[project.urls]
+Homepage = "https://tomdstanton.github.io/SeroEpi/"
+Repository = "https://github.com/tomdstanton/SeroEpi"
+Documentation = "https://tomdstanton.github.io/SeroEpi/"
+"Bug Tracker" = "https://github.com/tomdstanton/SeroEpi/issues"
+Changelog = "https://github.com/tomdstanton/SeroEpi/blob/master/CHANGELOG.md"
 
 [build-system]
-requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
-
-[tool.hatch.build.targets.wheel]
-packages = ["src/seroepi"]
+requires = ["hatchling", "hatch-vcs"]
 
 [tool.hatch.version]
 source = "vcs"
@@ -54,35 +78,30 @@ source = "vcs"
 [tool.hatch.build.hooks.vcs]
 version-file = "src/seroepi/_version.py"
 
-[tool.mypy]
-files = ["src"]
-disallow_untyped_defs = true
-disallow_any_unimported = true
-no_implicit_optional = true
-check_untyped_defs = true
-warn_return_any = true
-warn_unused_ignores = true
-show_error_codes = true
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
+[tool.hatch.build.targets.wheel]
+packages = ["src/seroepi"]
 
 [tool.ruff]
-target-version = "py311"
 line-length = 120
-fix = true
+exclude = [".agents", ".git", ".venv", "__pycache__", "src/seroepi/_version.py"]
+target-version = "py311"
 
 [tool.ruff.lint]
-select = [
-    "YTT", "S", "B", "A", "C4", "T10", "SIM", "I", "C90", "E", "W", "F", "PGH", "UP", "RUF", "TRY"
-]
-ignore = [
-    "E501", # LineTooLong
-    "E731", # DoNotAssignLambda
-]
+select = ["E", "F", "I", "UP", "D"]
+extend-select = ["ANN", "PYI"]
+preview = true
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ty.rules]
+missing-type-argument = "error"
+possibly-unresolved-reference = "warn"
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["S101"]
+"tests/*" = ["D", "ANN", "E501"]
+"scripts/*" = ["D", "ANN", "E501", "UP031"]
+"app/*" = ["D", "ANN", "E501"]
 
-[tool.ruff.format]
-preview = true
+[tool.karva.profile.default.coverage]
+branch = true
